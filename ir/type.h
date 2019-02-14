@@ -4,6 +4,7 @@
 // Distributed under the MIT license that can be found in the LICENSE file.
 
 #include "smt/expr.h"
+#include <cassert>
 #include <initializer_list>
 #include <memory>
 #include <string>
@@ -131,7 +132,9 @@ class AggregateType final : public Type {
 public:
   AggregateType(std::string &&name) : Type(std::move(name)) {}
   AggregateType(std::string &&name, std::initializer_list<Type*> types)
-    : Type(std::move(name)), childrenType(types) {}
+    : Type(std::move(name)), childrenType(types) {
+    assert(childrenType.size() > 0);
+  }
 
   unsigned bits() const override;
   smt::expr enforceAggregateType() const override;
@@ -143,6 +146,8 @@ public:
 
   // constraint enforcing type to be one of the aggregate's children
   smt::expr getChildrenConstraints(Type &type) const;
+  // Extracts the type located at `b` from `a`.
+  smt::expr extract(const smt::expr &a, const smt::expr &b) const;
 };
 
 

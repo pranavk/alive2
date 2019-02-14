@@ -4,6 +4,7 @@
 // Distributed under the MIT license that can be found in the LICENSE file.
 
 #include <cstdint>
+#include <iostream>
 #include <ostream>
 #include <set>
 #include <utility>
@@ -194,6 +195,8 @@ public:
   unsigned id() const;
   unsigned hash() const;
 
+  // debugging functions
+  void dump(std::ostream& os = std::cout) const;
 
   template <typename... Exprs>
   static bool allValid(const expr &e, Exprs&&... exprs) {

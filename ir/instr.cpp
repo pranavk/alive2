@@ -6,7 +6,8 @@
 #include "smt/expr.h"
 #include "smt/solver.h"
 #include "util/compiler.h"
-
+#include "ir/type.h"
+#include <iostream>
 using namespace smt;
 using namespace std;
 
@@ -237,8 +238,13 @@ StateValue BinOp::toSMT(State &s) const {
     break;
 
   case ExtractValue:
-    val = expr::mkIf(b == 1u, a.extract(0, 0), a.extract(a.bits() - 1, 1));
+  {
+    auto &aggType = static_cast<AggregateType&>(lhs.getType());
+    val = aggType.extract(a, b);
+    std::cout << "val: " << val << std::endl;
     break;
+  }
+
   }
   return { move(val), move(not_poison) };
 }

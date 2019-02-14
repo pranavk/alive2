@@ -867,8 +867,13 @@ expr expr::subst(const expr &from, const expr &to) const {
   return Z3_substitute(ctx(), ast(), 1, &f, &t);
 }
 
+void expr::dump(ostream &os) const {
+  os << (isValid() ? Z3_ast_to_string(ctx(), ast()) : "(null)");
+}
+
 ostream& operator<<(ostream &os, const expr &e) {
-  return os << (e.isValid() ? Z3_ast_to_string(ctx(), e()) : "(null)");
+  e.dump(os);
+  return os;
 }
 
 bool expr::operator<(const expr &rhs) const {

@@ -6,7 +6,7 @@
 #include "util/compiler.h"
 #include <cassert>
 #include <sstream>
-
+#include <iostream>
 using namespace smt;
 using namespace std;
 
@@ -296,6 +296,39 @@ expr AggregateType::getChildrenConstraints(Type &type) const {
   }
 
   return constr;
+}
+
+expr AggregateType::extract(const expr &a, const expr &b) const {
+  auto it = std::max_element(std::begin(childrenType), std::end(childrenType),
+			     [](Type *a, Type *b) {
+			       return a->bits() < b->bits();
+			     });
+  unsigned biggestBW = (*it)->bits();
+  auto size = childrenType.size();
+  unsigned curBW = childrenType[size - 1]->bits();
+  auto total = curBW;
+  expr res = a.extract(total - 1, 0);
+  auto extendBW = [](expr &val, unsigned amount) {
+		    cout << "amt: " << amount << endl;
+		    if (amount > 0)
+		      val = val.zext(amount);
+		    return val;
+		  };
+  cout << "res : " << res << endl;
+  res = extendBW(res, biggestBW - curBW);
+  cout << "res : " << res << endl;
+  for (int i = size - 2; i >= 0; i--) {
+    auto low = total;
+    curBW = childrenType[i]->bits();
+    total += curBW;
+    auto tmp = a.extract(total - 1, low);
+    tmp = extendBW(tmp, biggestBW - curBW);
+    cout << "tmp: " << tmp << endl;
+    res = expr::mkIf(b == expr::mkUInt(i, 1), tmp, res);
+    cout << "res : " << res << endl;
+  }
+
+  return res;
 }
 
 
