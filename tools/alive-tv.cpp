@@ -23,6 +23,7 @@
 
 #include <iostream>
 #include <utility>
+#include <sstream>
 
 using namespace tools;
 using namespace util;
@@ -118,6 +119,17 @@ static bool compareFunctions(llvm::Function &F1, llvm::Function &F2,
   Transform t;
   t.src = move(*Func1);
   t.tgt = move(*Func2);
+
+  std::ostringstream oss;
+  t.src.print(oss, true);
+  std::ostringstream oss1;
+  t.tgt.print(oss1, true);
+  if (oss.str() == oss1.str()) {
+    cerr << "ERROR: Syntactically equivalent alive IRs\n";
+    ++errorCount;
+    return true;
+  }
+
   TransformVerify verifier(t, false);
   t.print(cout, print_opts);
 
