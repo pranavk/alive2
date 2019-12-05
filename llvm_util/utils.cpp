@@ -210,10 +210,7 @@ Value* get_operand(llvm::Value *v,
     if (gvar)
       return gvar;
 
-    if (gv->getValueType()->isArrayTy()) {
-      // TODO: Array type of a global variable is not supported.
-      return nullptr;
-    } else if (auto st = dyn_cast<llvm::StructType>(gv->getValueType())) {
+    if (auto st = dyn_cast<llvm::StructType>(gv->getValueType())) {
       if (st->isOpaque())
         // TODO: Global variable of opaque type is not supported.
         return nullptr;
