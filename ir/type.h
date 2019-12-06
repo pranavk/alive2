@@ -286,6 +286,8 @@ public:
   bool isArrayType() const override;
   smt::expr enforceArrayType() const override;
   void print(std::ostream &os) const override;
+  smt::expr enforceVectorType(
+          const std::function<smt::expr(const Type&)> &enforceElem) const override;
 };
 
 

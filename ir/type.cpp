@@ -833,6 +833,11 @@ void ArrayType::print(ostream &os) const {
     os << '[' << elements << " x " << *children[0] << ']';
 }
 
+expr ArrayType::enforceVectorType(
+  const function<expr(const Type&)> &enforceElem) const {
+  return enforceElem(*children[0]);
+}
+
 
 VectorType::VectorType(string &&name, unsigned elements, Type &elementTy)
   : AggregateType(move(name), false) {
