@@ -63,6 +63,7 @@ public:
   virtual smt::expr enforceIntType(unsigned bits = 0) const;
   smt::expr enforceIntOrPtrType() const;
   virtual smt::expr enforcePtrType() const;
+  virtual smt::expr enforceArrayType() const;
   virtual smt::expr enforceStructType() const;
   virtual smt::expr enforceAggregateType(
     std::vector<Type*> *element_types = nullptr) const;
@@ -279,8 +280,11 @@ public:
 class ArrayType final : public AggregateType {
 public:
   ArrayType(std::string &&name) : AggregateType(std::move(name)) {}
+  ArrayType(std::string &&name, unsigned elements, Type &elementTy);
+
   smt::expr getTypeConstraints() const override;
   bool isArrayType() const override;
+  smt::expr enforceArrayType() const override;
   void print(std::ostream &os) const override;
 };
 

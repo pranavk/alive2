@@ -115,6 +115,19 @@ Type* llvm_type2alive(const llvm::Type *ty) {
     }
     return cache.get();
   }
+  case llvm::Type::ArrayTyID: {
+    auto &cache = type_cache[ty];
+    if (!cache) {
+      auto aty = cast<llvm::ArrayType>(ty);
+      auto elems = aty->getNumElements();
+      auto ety = llvm_type2alive(aty->getElementType());
+      if (!ety)
+        return nullptr;
+      cache = make_unique<ArrayType>("ty_" + to_string(type_id_counter++),
+                                     elems, *ety);
+    }
+    return cache.get();
+  }
   case llvm::Type::VectorTyID: {
     auto &cache = type_cache[ty];
     if (!cache) {
@@ -134,7 +147,7 @@ Type* llvm_type2alive(const llvm::Type *ty) {
   }
   default:
 err:
-    *out << "ERROR: Unsupported type: " << *ty << '\n';
+    *out << "ERROR: Unsupported type: " << ty->getTypeID() << *ty << '\n';
     return nullptr;
   }
 }

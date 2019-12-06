@@ -117,6 +117,10 @@ expr Type::enforcePtrType() const {
   return false;
 }
 
+expr Type::enforceArrayType() const {
+  return false;
+}
+
 expr Type::enforceStructType() const {
   return false;
 }
@@ -797,9 +801,27 @@ const AggregateType* AggregateType::getAsAggregateType() const {
 }
 
 
+ArrayType::ArrayType(string &&name, unsigned elements, Type &elementTy)
+  : AggregateType(move(name), false) {
+  this->elements = elements;
+  defined = true;
+  children.resize(elements, &elementTy);
+}
+
 expr ArrayType::getTypeConstraints() const {
-  // TODO
-  return false;
+  auto &elementTy = *children[0];
+  expr r = AggregateType::getTypeConstraints();
+
+  // all elements have the same type
+  for (unsigned i = 1, e = children.size(); i != e; ++i) {
+    r &= numElements().ugt(i).implies(elementTy == *children[i]);
+  }
+
+  return r;
+}
+
+expr ArrayType::enforceArrayType() const {
+  return true;
 }
 
 bool ArrayType::isArrayType() const {
@@ -807,7 +829,8 @@ bool ArrayType::isArrayType() const {
 }
 
 void ArrayType::print(ostream &os) const {
-  os << "TODO";
+  if (elements)
+    os << '[' << elements << " x " << *children[0] << ']';
 }
 
 
