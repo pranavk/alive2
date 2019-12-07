@@ -819,6 +819,24 @@ static unique_ptr<Instr> parse_extractvalue(string_view name) {
   return instr;
 }
 
+static unique_ptr<Instr> parse_insertvalue(string_view name) {
+  auto &type = parse_type();
+  auto &val = parse_operand(type);
+  parse_comma();
+  auto &etype = parse_type();
+  auto &eval = parse_operand(etype);
+
+  auto instr = make_unique<InsertValue>(get_sym_type(), string(name), val, eval);
+
+  while (true) {
+    if (!tokenizer.consumeIf(COMMA))
+      break;
+    instr->addIdx((unsigned)parse_number());
+  }
+
+  return instr;
+}
+
 static ICmp::Cond parse_icmp_cond() {
   switch (auto t = *tokenizer) {
   case EQ:  return ICmp::EQ;
@@ -1031,6 +1049,8 @@ static unique_ptr<Instr> parse_instr(string_view name) {
     return parse_select(name);
   case EXTRACTVALUE:
     return parse_extractvalue(name);
+  case INSERTVALUE:
+    return parse_insertvalue(name);
   case ICMP:
     return parse_icmp(name);
   case FCMP:
@@ -1061,6 +1081,7 @@ static unique_ptr<Instr> parse_instr(string_view name) {
   case UNDEF:
   case POISON:
   case REGISTER:
+  case ARRAY_TYPE_PREFIX:
     return parse_copyop(name, t);
   default:
     tokenizer.unget(t);

@@ -117,7 +117,8 @@ expr Type::enforcePtrType() const {
   return false;
 }
 
-expr Type::enforceArrayType() const {
+expr
+Type::enforceArrayType(const function<expr(const Type&)> &enforceElem) const {
   return false;
 }
 
@@ -641,16 +642,41 @@ StateValue AggregateType::extract(const StateValue &val, unsigned index) const {
   if (!val.isValid())
     return {};
 
-  unsigned total_till_now = 0;
+  unsigned total_till_idx = 0;
   for (unsigned i = 0; i < index; ++i) {
-    total_till_now += children[i]->bits();
+    total_till_idx += children[i]->bits();
   }
-  unsigned high = val.bits() - total_till_now;
+
+  unsigned high = bits() - total_till_idx;
   unsigned h = high - 1;
   unsigned l = high - children[index]->bits();
 
   return children[index]->fromBV({ val.value.extract(h, l),
                                    val.non_poison.extract(h, l) });
+}
+
+StateValue AggregateType::update(const IR::StateValue &aggregate,
+                                 const IR::StateValue &val,
+                                 unsigned index) const {
+  auto &elementTy = *children[index];
+  StateValue val_bv = elementTy.toBV(aggregate);
+
+  unsigned total_till_idx = 0;
+  for (unsigned i = 0; i < index; ++i) {
+    total_till_idx += children[i]->bits();
+  }
+
+  unsigned bw_elem = children[index]->bits();
+  unsigned bw_val = bits();
+
+  expr fill = expr::mkUInt(0, bw_val - bw_elem);
+  expr mask = ~expr::mkInt(-1, bw_elem).concat(fill).lshr(total_till_idx);
+
+  expr nv_shifted = val_bv.value.concat(fill).lshr(total_till_idx);
+  expr np_shifted = val_bv.value.concat(fill).lshr(total_till_idx);
+
+  return fromBV({(aggregate.value & mask) | nv_shifted,
+                 (aggregate.non_poison & mask) | np_shifted });
 }
 
 unsigned AggregateType::bits() const {
@@ -820,10 +846,6 @@ expr ArrayType::getTypeConstraints() const {
   return r;
 }
 
-expr ArrayType::enforceArrayType() const {
-  return true;
-}
-
 bool ArrayType::isArrayType() const {
   return true;
 }
@@ -833,7 +855,7 @@ void ArrayType::print(ostream &os) const {
     os << '[' << elements << " x " << *children[0] << ']';
 }
 
-expr ArrayType::enforceVectorType(
+expr ArrayType::enforceArrayType(
   const function<expr(const Type&)> &enforceElem) const {
   return enforceElem(*children[0]);
 }

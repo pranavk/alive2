@@ -63,7 +63,8 @@ public:
   virtual smt::expr enforceIntType(unsigned bits = 0) const;
   smt::expr enforceIntOrPtrType() const;
   virtual smt::expr enforcePtrType() const;
-  virtual smt::expr enforceArrayType() const;
+  virtual smt::expr enforceArrayType(
+    const std::function<smt::expr(const Type&)> &enforceElem) const;
   virtual smt::expr enforceStructType() const;
   virtual smt::expr enforceAggregateType(
     std::vector<Type*> *element_types = nullptr) const;
@@ -250,6 +251,8 @@ public:
 
   StateValue aggregateVals(const std::vector<StateValue> &vals) const;
   IR::StateValue extract(const IR::StateValue &val, unsigned index) const;
+  IR::StateValue update(const IR::StateValue &aggregate, const IR::StateValue &val,
+                        unsigned index) const;
   Type& getChild(unsigned index) const { return *children[index]; }
 
   unsigned bits() const override;
@@ -284,10 +287,9 @@ public:
 
   smt::expr getTypeConstraints() const override;
   bool isArrayType() const override;
-  smt::expr enforceArrayType() const override;
   void print(std::ostream &os) const override;
-  smt::expr enforceVectorType(
-          const std::function<smt::expr(const Type&)> &enforceElem) const override;
+  smt::expr enforceArrayType(
+    const std::function<smt::expr(const Type&)> &enforceElem) const override;
 };
 
 

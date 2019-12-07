@@ -996,6 +996,72 @@ unique_ptr<Instr> ExtractValue::dup(const string &suffix) const {
 }
 
 
+void InsertValue::addIdx(unsigned idx) {
+  idxs.emplace_back(idx);
+}
+
+std::vector<Value*> InsertValue::operands() const {
+  return { val, elemval };
+}
+
+void InsertValue::rauw(const IR::Value &what, IR::Value &with) {
+  RAUW(val);
+  RAUW(elemval);
+}
+
+void InsertValue::print(std::ostream &os) const {
+  os << getName() << " = insertvalue " << *val << ", " << *elemval;
+  for (auto idx : idxs) {
+    os << ", " << idx;
+  }
+}
+
+StateValue InsertValue::toSMT(IR::State &s) const {
+  auto v = s[*val];
+
+  vector<StateValue> state_vals;
+  Type *type = &val->getType();
+  unsigned i = 0;
+  for (auto idx : idxs) {
+    auto ty = type->getAsAggregateType();
+    v = ty->extract(v, idx);
+    type = &ty->getChild(idx);
+  }
+  return v;
+}
+
+expr InsertValue::getTypeConstraints(const IR::Function &f) const {
+  auto c = Value::getTypeConstraints() &&
+           val->getType().enforceAggregateType() &&
+           val->getType() == getType() &&
+           !val->getType().enforceVectorType();
+
+  Type *type = &val->getType();
+  unsigned  i = 0;
+  for (auto idx : idxs) {
+    auto ty = type->getAsAggregateType();
+    if (!ty) {
+      c = false;
+      break;
+    }
+    type = &ty->getChild(idx);
+
+    c &= ty->numElements().ugt(idx);
+    if (++i == idxs.size())
+      c &= ty->getChild(idx) == elemval->getType();
+  }
+  return c;
+}
+
+unique_ptr<Instr> InsertValue::dup(const string &suffix) const {
+  auto ret = make_unique<InsertValue>(getType(), getName() + suffix, *val, *elemval);
+  for (auto idx : idxs) {
+    ret->addIdx(idx);
+  }
+  return ret;
+}
+
+
 void FnCall::addArg(Value &arg) {
   args.emplace_back(&arg);
 }

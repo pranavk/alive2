@@ -155,6 +155,25 @@ public:
 };
 
 
+class InsertValue final : public Instr {
+  Value *val;
+  Value *elemval;
+  std::vector<unsigned> idxs;
+public:
+  InsertValue(Type &type, std::string &&name, Value &val, Value &elemval)
+          : Instr(type, std::move(name)), val(&val), elemval(&elemval)
+          {}
+  void addIdx(unsigned idx);
+
+  std::vector<Value*> operands() const override;
+  void rauw(const Value &what, Value &with) override;
+  void print(std::ostream &os) const override;
+  StateValue toSMT(State &s) const override;
+  smt::expr getTypeConstraints(const Function &f) const override;
+  std::unique_ptr<Instr> dup(const std::string &suffix) const override;
+};
+
+
 class FnCall final : public Instr {
   std::string fnName;
   std::vector<Value*> args;
