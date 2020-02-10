@@ -28,6 +28,7 @@
 #include <fstream>
 #include <iostream>
 #include <utility>
+#include <sstream>
 
 using namespace tools;
 using namespace util;
@@ -227,7 +228,7 @@ static void compareFunctions(llvm::Function &F1, llvm::Function &F2,
   auto Func1 = llvm2alive(F1, llvm::TargetLibraryInfoWrapperPass(targetTriple)
                                     .getTLI(F1));
   if (!Func1) {
-    cerr << "ERROR: Could not translate '" << F1.getName().str()
+    cerr << "ERROR: Could not translate1 '" << F1.getName().str()
          << "' to Alive IR\n";
     ++errorCount;
     return;
@@ -236,10 +237,19 @@ static void compareFunctions(llvm::Function &F1, llvm::Function &F2,
   auto Func2 = llvm2alive(F2, llvm::TargetLibraryInfoWrapperPass(targetTriple)
                                     .getTLI(F2), Func1->getGlobalVarNames());
   if (!Func2) {
-    cerr << "ERROR: Could not translate '" << F2.getName().str()
+    cerr << "ERROR: Could not translate2 '" << F2.getName().str()
          << "' to Alive IR\n";
     ++errorCount;
     return;
+  }
+
+  stringstream ss1;
+  ss1 << *Func1;
+  stringstream ss2;
+  ss2 << *Func2;
+
+  if (ss1.str() == ss2.str()) {
+    cerr << "Textual Alive IR is same!\n";
   }
 
   smt_init->reset();
@@ -264,15 +274,13 @@ static void compareFunctions(llvm::Function &F1, llvm::Function &F2,
   Errors errs = verifier.verify();
   bool result(errs);
   if (result) {
+    cerr << "Transformation doesn't verify!\n";
     if (errs.isUnsound()) {
-      cout << "Transformation doesn't verify!\n";
-      if (!opt_succinct)
-        cout << errs << endl;
       ++badCount;
     } else {
-      cerr << errs << endl;
       ++errorCount;
     }
+    cerr << errs << endl;
   } else {
     cout << "Transformation seems to be correct!\n\n";
     ++goodCount;
