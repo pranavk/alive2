@@ -742,6 +742,11 @@ public:
       case llvm::Attribute::InReg:
       case llvm::Attribute::SExt:
       case llvm::Attribute::ZExt:
+      case llvm::Attribute::Dereferenceable:
+      case llvm::Attribute::DereferenceableOrNull:
+      case llvm::Attribute::NoAlias:
+      case llvm::Attribute::StructRet:
+      case llvm::Attribute::Returned:
         // TODO: not important for IR verification, but we should check that
         // they don't change
         continue;
