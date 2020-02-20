@@ -5,6 +5,7 @@
 #include "ir/globals.h"
 #include "util/compiler.h"
 #include <tuple>
+#include <iostream>
 
 using namespace smt;
 using namespace std;

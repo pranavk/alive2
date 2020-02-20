@@ -16,6 +16,7 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <iostream>
 
 using namespace IR;
 using namespace smt;
@@ -324,7 +325,47 @@ static void check_refinement(Errors &errs, Transform &t,
   pre_tgt &= src_state.getPre(true)();
   pre_tgt &= tgt_state.getPre(true)();
 
-  auto [poison_cnstr, value_cnstr] = type.refines(src_state, tgt_state, a, b);
+
+
+
+  auto tgt_state_retval = b;
+  std::vector<const std::pair<StateValue, std::set<smt::expr>>*> input_vars;
+  for (auto &[var, val, used] : tgt_state.getValues()) {
+    (void)used;
+    if (dynamic_cast<const Input*>(var)) {
+      input_vars.emplace_back(&val);
+    }
+  }
+
+
+  // MODIFICATION START
+
+  auto argperm_bits = ilog2(input_vars.size());
+  auto bw = input_vars.size() * argperm_bits;
+
+  auto p_var = expr::mkFreshVar("p_var", expr::mkUInt(0, bw));
+  for (unsigned i = 0; i < input_vars.size(); i++) {
+    auto low = i * argperm_bits;
+    auto ifexpr = expr::mkIf(p_var.extract(low + argperm_bits - 1, low) == 0,
+            input_vars[i]->first.value, input_vars[(i + 1) % input_vars.size()]->first.value);
+    std::cerr <<   input_vars[i]->first.value << std::endl;
+    std::cerr << input_vars[(i + 1) % input_vars.size()]->first.value << std::endl;
+    std::cerr << ifexpr << std::endl;
+    tgt_state_retval = tgt_state_retval.subst({{input_vars[i]->first.value, ifexpr}});
+  }
+
+
+  std::cerr << a << std::endl;
+  std::cerr << b << std::endl;
+  std::cerr << tgt_state_retval << std::endl;
+
+  // Replace `b` with `tgt_State_retval` as last argument
+  auto [poison_cnstr, value_cnstr] = type.refines(src_state, tgt_state, a, tgt_state_retval);
+
+  std::cerr << value_cnstr <<  std::endl;
+
+  // MODIFICATIONS END
+
 
   auto src_mem = src_state.returnMemory();
   auto tgt_mem = tgt_state.returnMemory();
@@ -335,6 +376,7 @@ static void check_refinement(Errors &errs, Transform &t,
     errs.add("Precondition is always false", false);
     return;
   }
+
 
   auto mk_fml = [&](expr &&refines) -> expr {
     // from the check above we already know that
@@ -347,7 +389,8 @@ static void check_refinement(Errors &errs, Transform &t,
       return move(refines);
 
     auto fml = pre_tgt && pre_src.implies(refines);
-    return axioms_expr && preprocess(t, qvars, uvars, move(fml));
+    auto pre = preprocess(t, qvars, uvars, move(fml));
+    return axioms_expr && pre;
   };
 
   auto print_ptr_load = [&](ostream &s, const Model &m) {
@@ -363,13 +406,43 @@ static void check_refinement(Errors &errs, Transform &t,
         err(r, [](ostream&, const Model&){},
             "Source is more defined than target");
       }},
+    { mk_fml(dom && value_cnstr),
+      [&](const Result &r) {
+        std::cerr << "value_cnstr\n";
+        if (r.isSat()) {
+          std::cerr << "sat \n";
+        }
+        if (r.isUnsat()) {
+          std::cerr <<"unsat\n";
+        }
+        if (!r.isSat()) {
+          std::cerr << "unknown\n";
+        }
+        auto &m = r.getModel();
+        std::cerr << "value_cnstr: inside\n";
+
+        std::cerr << m.getUInt(p_var) << std::endl;
+
+        for (auto &[var, val, used] : tgt_state.getValues()) {
+          (void)used;
+          if (var->getName().find("p_var") != std::string::npos) {
+            std::cerr << *var << " = ";
+            print_varval(std::cerr, tgt_state, m, var, var->getType(), val.first);
+            std::cerr << '\n';
+          }
+        }
+      }},
     { mk_fml(dom && !poison_cnstr),
       [&](const Result &r) {
         err(r, print_value, "Target is more poisonous than source");
       }},
     { mk_fml(dom && !value_cnstr),
       [&](const Result &r) {
-        err(r, print_value, "Value mismatch");
+      std::cerr << "!value_cnstr\n";
+      if (r.isSat()) {
+        std::cerr << "sat\n";
+      }
+      err(r, print_value, "Value mismatch");
       }},
     { mk_fml(dom && !memory_cnstr),
       [&](const Result &r) {
@@ -951,6 +1024,7 @@ Errors TransformVerify::verify() const {
         return errs;
     }
   }
+
 
   check_refinement(errs, t, src_state, tgt_state, nullptr, t.src.getType(),
                    src_state.returnDomain()(), src_state.returnVal(),
