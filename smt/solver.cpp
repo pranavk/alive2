@@ -320,6 +320,7 @@ Result Solver::check() const {
 
 void Solver::check(initializer_list<E> queries) {
   for (auto &[q, error] : queries) {
+    std::cerr << "query " << std::endl;
     if (!q.isValid()) {
       ++num_invalid;
       error(Result::INVALID);

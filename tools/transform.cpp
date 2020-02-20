@@ -14,6 +14,7 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <iostream>
 
 using namespace IR;
 using namespace smt;
@@ -265,6 +266,10 @@ static void check_refinement(Errors &errs, Transform &t,
   auto &a = ap.first;
   auto &b = bp.first;
 
+  std::cerr << "check_refinement" << std::endl;
+  std::cerr << a.value << std::endl;
+  std::cerr << b.value << std::endl;
+
   auto &uvars = ap.second;
   auto qvars = src_state.getQuantVars();
   qvars.insert(ap.second.begin(), ap.second.end());
@@ -320,6 +325,8 @@ static void check_refinement(Errors &errs, Transform &t,
 
   auto [poison_cnstr, value_cnstr] = type.refines(src_state, tgt_state, a, b);
 
+  std::cerr << "poison cnstr: " << std::endl << poison_cnstr << std::endl;
+  std::cerr << "value cnstr: " << std::endl << value_cnstr << '\n';
   auto src_mem = src_state.returnMemory();
   auto tgt_mem = tgt_state.returnMemory();
   auto [memory_cnstr, ptr_refinement0] = src_mem.refined(tgt_mem);
@@ -329,6 +336,35 @@ static void check_refinement(Errors &errs, Transform &t,
     errs.add("Precondition is always false", false);
     return;
   }
+
+
+
+  auto tgt_state_retval = tgt_state.returnVal();
+  std::vector<const std::pair<StateValue, std::set<smt::expr>>*> input_vars;
+  for (auto &[var, val, used] : tgt_state.getValues()) {
+    (void)used;
+    if (dynamic_cast<const Input*>(var)) {
+      input_vars.emplace_back(&val);
+    }
+  }
+
+  auto argperm_bits = ilog2(input_vars.size());
+  std::cerr << "argperm bits = " << argperm_bits << '\n';
+  auto bw = input_vars.size() * argperm_bits;
+  std::cerr << "bitwidth of p = " << bw << '\n';
+
+  auto p_var = expr::mkFreshVar("p_var", expr::mkUInt(0, bw));
+  for (unsigned i = 0; i < input_vars.size(); i++) {
+    auto low = i * argperm_bits;
+    std::cerr << input_vars[i]->first.value << std::endl;
+    auto ifexpr = expr::mkIf(p_var.extract(low + argperm_bits - 1, low) == 0, input_vars[i]->first.value, input_vars[(i + 1) % input_vars.size()]->first.value);
+
+    tgt_state_retval.first.subst({{input_vars[i]->first.value, ifexpr}});
+  }
+
+  std::cerr << "tgt_state_retval before: " << tgt_state.returnVal().first << std::endl;
+
+  std::cerr << "tgt_state_retval: " << tgt_state_retval.first << std::endl;
 
   auto mk_fml = [&](expr &&refines) -> expr {
     // from the check above we already know that
@@ -340,8 +376,13 @@ static void check_refinement(Errors &errs, Transform &t,
     if (refines.isFalse())
       return move(refines);
 
+    std::cerr << "unprocsssed: " << refines << std::endl;
     auto fml = pre_tgt && pre_src.implies(refines);
-    return axioms_expr && preprocess(t, qvars, uvars, move(fml));
+    auto pre = preprocess(t, qvars, uvars, move(fml));
+    std::cerr << "axioms: " << axioms_expr << std::endl;
+
+    std::cerr << "preprocessed: " << pre << std::endl;
+    return axioms_expr && pre;
   };
 
   auto print_ptr_load = [&](ostream &s, const Model &m) {
@@ -861,6 +902,7 @@ Errors TransformVerify::verify() const {
         return errs;
     }
   }
+
 
   check_refinement(errs, t, src_state, tgt_state, nullptr, t.src.getType(),
                    src_state.returnDomain()(), src_state.returnVal(),
