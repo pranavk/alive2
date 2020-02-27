@@ -275,6 +275,7 @@ static void check_refinement(Errors &errs, Transform &t,
   qvars.insert(ap.second.begin(), ap.second.end());
 
   auto err = [&](const Result &r, print_var_val_ty print, const char *msg) {
+    std::cerr << errs << std::endl;
     error(errs, src_state, tgt_state, r, var, msg, check_each_var, print);
   };
 
@@ -288,11 +289,14 @@ static void check_refinement(Errors &errs, Transform &t,
   AndExpr axioms = src_state.getAxioms();
   axioms.add(tgt_state.getAxioms());
 
+  AndExpr normalTy_axioms = src_state.getAxioms();
+
   // restrict type variable from taking disabled values
-  if (config::disable_undef_input || config::disable_poison_input) {
+  if (true || config::disable_undef_input || config::disable_poison_input) {
     for (auto &i : t.src.getInputs()) {
       if (auto in = dynamic_cast<const Input*>(&i)) {
         auto var = in->getTyVar();
+        normalTy_axioms.add(var == 00);
         if (config::disable_undef_input) {
           if (config::disable_poison_input)
             axioms.add(var == 0);
@@ -317,7 +321,6 @@ static void check_refinement(Errors &errs, Transform &t,
   expr pre_src = pre_src_and();
   expr pre_tgt = pre_tgt_and();
 
-  expr axioms_expr = axioms();
   expr dom = dom_a && dom_b;
 
   pre_tgt &= src_state.getOOM()();
@@ -326,6 +329,7 @@ static void check_refinement(Errors &errs, Transform &t,
   pre_tgt &= tgt_state.getPre(true)();
 
 
+  // MODIFICATION START
 
 
   auto tgt_state_retval = b;
@@ -338,31 +342,53 @@ static void check_refinement(Errors &errs, Transform &t,
   }
 
 
-  // MODIFICATION START
-
-  auto argperm_bits = ilog2(input_vars.size());
+  auto argperm_bits = ilog2_ceil(input_vars.size(), false);
   auto bw = input_vars.size() * argperm_bits;
 
+
+
+  vector<pair<expr, expr>> repls;
   auto p_var = expr::mkFreshVar("p_var", expr::mkUInt(0, bw));
+
+
+  AndExpr permutation_ule;
+  std::vector<expr> prev_expr;
   for (unsigned i = 0; i < input_vars.size(); i++) {
     auto low = i * argperm_bits;
-    auto ifexpr = expr::mkIf(p_var.extract(low + argperm_bits - 1, low) == 0,
-            input_vars[i]->first.value, input_vars[(i + 1) % input_vars.size()]->first.value);
-    std::cerr <<   input_vars[i]->first.value << std::endl;
-    std::cerr << input_vars[(i + 1) % input_vars.size()]->first.value << std::endl;
-    std::cerr << ifexpr << std::endl;
-    tgt_state_retval = tgt_state_retval.subst({{input_vars[i]->first.value, ifexpr}});
+    auto arg_expr = p_var.extract(low + argperm_bits - 1, low);
+
+    DisjointExpr<expr> ret;
+    for (unsigned j = 0; j < input_vars.size(); j++) {
+      ret.add(input_vars[j]->first.value, arg_expr == j);
+    }
+    auto repl_expr = *ret();
+    repls.emplace_back(input_vars[i]->first.value, repl_expr);
+
+
+    permutation_ule.add(arg_expr.ule(input_vars.size() - 1));
+
+    for (auto &single_expr : prev_expr) {
+      permutation_ule.add(arg_expr != single_expr);
+    }
+
+    prev_expr.emplace_back(arg_expr);
   }
 
+  tgt_state_retval = tgt_state_retval.subst(repls);
 
-  std::cerr << a << std::endl;
-  std::cerr << b << std::endl;
-  std::cerr << tgt_state_retval << std::endl;
+  //axioms.add((p_var.extract(0, 0) ^ p_var.extract(1, 1))== 1);
+  //axioms.add(p_var.extract(0, 0) == 0);
+  expr axioms_expr = axioms() && permutation_ule();
+
+  std::cerr << permutation_ule() << std::endl;
+//  std::cerr << a << std::endl;
+//  std::cerr << b << std::endl;
+//  std::cerr << tgt_state_retval << std::endl;
 
   // Replace `b` with `tgt_State_retval` as last argument
   auto [poison_cnstr, value_cnstr] = type.refines(src_state, tgt_state, a, tgt_state_retval);
 
-  std::cerr << value_cnstr <<  std::endl;
+  //std::cerr << value_cnstr <<  std::endl;
 
   // MODIFICATIONS END
 
@@ -377,8 +403,7 @@ static void check_refinement(Errors &errs, Transform &t,
     return;
   }
 
-
-  auto mk_fml = [&](expr &&refines) -> expr {
+  auto mk_fml = [&](expr &&refines, expr extra_axioms = true, bool disable_undef_input = false) -> expr {
     // from the check above we already know that
     // \exists v,v' . pre_tgt(v') && pre_src(v) is SAT (or timeout)
     // so \forall v . pre_tgt && (!pre_src(v) || refines) simplifies to:
@@ -388,9 +413,17 @@ static void check_refinement(Errors &errs, Transform &t,
     if (refines.isFalse())
       return move(refines);
 
+    auto qvars_copy = qvars;
+    auto uvars_copy = uvars;
+    if (disable_undef_input)
+    {
+      qvars_copy.clear();
+      uvars_copy.clear();
+    }
+
     auto fml = pre_tgt && pre_src.implies(refines);
-    auto pre = preprocess(t, qvars, uvars, move(fml));
-    return axioms_expr && pre;
+    auto pre = preprocess(t, qvars_copy, uvars_copy, move(fml));
+    return axioms_expr && extra_axioms && pre;
   };
 
   auto print_ptr_load = [&](ostream &s, const Model &m) {
@@ -400,55 +433,92 @@ static void check_refinement(Errors &errs, Transform &t,
       << "\nTarget value: " << Byte(tgt_mem, m[tgt_mem.load(p)()]);
   };
 
-  Solver::check({
-    { mk_fml(dom_a.notImplies(dom_b)),
+
+  int max_tries = 120;
+  int i = 0;
+  auto extra_axioms = normalTy_axioms;
+  while (i++ < max_tries) {
+
+    std::cerr << "CEGIS try " << i << std::endl;
+    // find p that satisfies first query
+    uint16_t model_result = 0;
+    bool first_query = false;
+    Solver::check({
+      {mk_fml(dom && value_cnstr, extra_axioms(), true),
       [&](const Result &r) {
-        err(r, [](ostream&, const Model&){},
-            "Source is more defined than target");
-      }},
-    { mk_fml(dom && value_cnstr),
-      [&](const Result &r) {
-        std::cerr << "value_cnstr\n";
-        if (r.isSat()) {
-          std::cerr << "sat \n";
-        }
-        if (r.isUnsat()) {
-          std::cerr <<"unsat\n";
-        }
+        std::cerr << "first query";
         if (!r.isSat()) {
-          std::cerr << "unknown\n";
+          std::cerr << " failed\n";
+          return;
+        } else {
+          std::cerr << " succeeded\n";
         }
+
         auto &m = r.getModel();
-        std::cerr << "value_cnstr: inside\n";
+        std::cerr << "Results\np = "
+                  << m.eval(p_var, true) << std::endl;
 
-        std::cerr << m.getUInt(p_var) << std::endl;
-
-        for (auto &[var, val, used] : tgt_state.getValues()) {
+        model_result = m.getUInt(p_var);
+        for (auto &[var, val, used] : src_state.getValues()) {
           (void)used;
-          if (var->getName().find("p_var") != std::string::npos) {
-            std::cerr << *var << " = ";
-            print_varval(std::cerr, tgt_state, m, var, var->getType(), val.first);
-            std::cerr << '\n';
-          }
+          if (!dynamic_cast<const Input*>(var) &&
+              !dynamic_cast<const ConstantInput*>(var))
+            continue;
+          std::cerr << *var << " = ";
+          print_varval(std::cerr, src_state, m, var, var->getType(), val.first);
+          std::cerr << '\n';
         }
+        first_query = true;
       }},
-    { mk_fml(dom && !poison_cnstr),
-      [&](const Result &r) {
-        err(r, print_value, "Target is more poisonous than source");
-      }},
-    { mk_fml(dom && !value_cnstr),
-      [&](const Result &r) {
-      std::cerr << "!value_cnstr\n";
-      if (r.isSat()) {
-        std::cerr << "sat\n";
+    });
+
+    if (!first_query) {
+      std::cerr<< "no such permutation exist" << std::endl;
+      return;
+    }
+
+    std::cerr << "firing second query with p = " << model_result << std::endl;
+
+    Solver::check({
+      { mk_fml(dom_a.notImplies(dom_b)),
+              [&](const Result &r) {
+                err(r, [](ostream&, const Model&){},
+                    "Source is more defined than target");
+              }},
+      { mk_fml(dom && !poison_cnstr),
+              [&](const Result &r) {
+                err(r, print_value, "Target is more poisonous than source");
+              }},
+      { mk_fml(dom && !value_cnstr, p_var == model_result),
+              [&](const Result &r) {
+                err(r, print_value, "Value mismatch");
+              }},
+      { mk_fml(dom && !memory_cnstr),
+              [&](const Result &r) {
+                err(r, print_ptr_load, "Mismatch in memory");
+              }}
+      });
+
+      if (!errs) {
+        std::cerr << "SUCCESS after " << i << " try\n";
+
+        auto model_result_var = expr::mkUInt(model_result, bw);
+        for (unsigned k = 0; k < input_vars.size(); k++) {
+          auto low = k * argperm_bits;
+          auto arg_expr = model_result_var.extract(low + argperm_bits - 1, low).simplify();
+          uint64_t  n;
+          arg_expr.isUInt(n);
+          std::cerr << n << " ";
+        }
+        std::cerr << std::endl;
+
+        break;
+      } else {
+        std::cerr << errs << std::endl;
+        errs.clear();
+        extra_axioms.add(p_var != model_result);
       }
-      err(r, print_value, "Value mismatch");
-      }},
-    { mk_fml(dom && !memory_cnstr),
-      [&](const Result &r) {
-        err(r, print_ptr_load, "Mismatch in memory");
-      }}
-  });
+  }
 }
 
 static const ConversionOp* is_bitcast(const Value &v) {
