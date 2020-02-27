@@ -260,6 +260,43 @@ static expr preprocess(Transform &t, const set<expr> &qvars0,
   return insts;
 }
 
+typedef std::unordered_map<const Value*, expr> ValueCache;
+static expr getSpecialAPInt(char C, unsigned Width) {
+  switch (C) {
+    case 'a':
+      return expr::mkInt(-1, Width);
+    case 'b':
+      return expr::mkInt(1, Width);
+    case 'c':
+      return expr::mkUInt(0, Width);
+  }
+  return expr::mkUInt(0, Width);
+}
+
+static std::vector<ValueCache> generateInputSets(vector<const Input *>& Inputs) {
+  std::vector<ValueCache> InputSets;
+
+  ValueCache Cache;
+  constexpr unsigned PermutedLimit = 15;
+  std::string specialInputs = "abc";
+  std::unordered_set<std::string> Visited;
+  do {
+    int i = 0;
+    std::string usedInput;
+    for (auto &&I : Inputs) {
+      usedInput.append(1, specialInputs[i]);
+      Cache[I] = getSpecialAPInt(specialInputs[i++], I->bits());
+    }
+    if (!Visited.count(usedInput)) {
+      if (InputSets.size() >= PermutedLimit) break;
+      InputSets.push_back(Cache);
+      Visited.insert(usedInput);
+    }
+  } while (std::next_permutation(specialInputs.begin(), specialInputs.end()));
+
+  return InputSets;
+}
+
 
 static void check_refinement(Errors &errs, Transform &t,
                              State &src_state, State &tgt_state,
@@ -269,6 +306,24 @@ static void check_refinement(Errors &errs, Transform &t,
                              bool check_each_var) {
   auto &a = ap.first;
   auto &b = bp.first;
+
+  // gather all inputs
+  vector<const Input *> Inputs;
+  for (auto &[var, val, used] : src_state.getValues()) {
+    (void)used;
+    if (auto tmp = dynamic_cast<const Input*>(var)) {
+      Inputs.emplace_back(tmp);
+    }
+  }
+
+  auto InputSets = generateInputSets(Inputs);
+
+//  for (auto &Input : InputSets) {
+//    for (auto &i : Inputs) {
+//      std::cerr << Input[i] << " ";
+//    }
+//    std::cerr << std::endl;
+//  }
 
   auto &uvars = ap.second;
   auto qvars = src_state.getQuantVars();
@@ -392,6 +447,35 @@ static void check_refinement(Errors &errs, Transform &t,
 
   // MODIFICATIONS END
 
+  auto total_cnstr = dom;
+  for (auto &Input : InputSets) {
+    auto tmp_cnstr = value_cnstr;
+    for (auto &i : Inputs) {
+      for (auto &[var, val, used] : src_state.getValues()) {
+        if (auto vartmp = dynamic_cast<const class Input*>(var)) {
+          if (vartmp->smt_name == i->smt_name) {
+         //   std::cerr << "Replacing " << val.first.value << " by " << Input[i]
+            //          << std::endl;
+            tmp_cnstr = tmp_cnstr.subst({{val.first.value, Input[i]}});
+         //   std::cerr << tmp_cnstr << std::endl;
+          }
+        }
+      }
+      for (auto &[var, val, used] : tgt_state.getValues()) {
+        if (auto vartmp = dynamic_cast<const class Input*>(var)) {
+          if (vartmp->smt_name == i->smt_name) {
+         //   std::cerr << "Replacing " << val.first.value << " by " << Input[i]
+            //          << std::endl;
+            tmp_cnstr = tmp_cnstr.subst({{val.first.value, Input[i]}});
+           // std::cerr << tmp_cnstr << std::endl;
+          }
+        }
+      }
+    }
+   // std::cerr << tmp_cnstr << std::endl;
+    total_cnstr &= tmp_cnstr;
+    std::cerr << std::endl << std::endl;
+  }
 
   auto src_mem = src_state.returnMemory();
   auto tgt_mem = tgt_state.returnMemory();
@@ -444,7 +528,7 @@ static void check_refinement(Errors &errs, Transform &t,
     uint16_t model_result = 0;
     bool first_query = false;
     Solver::check({
-      {mk_fml(dom && value_cnstr, extra_axioms(), true),
+      {mk_fml(dom && total_cnstr && value_cnstr, extra_axioms(), true),
       [&](const Result &r) {
         std::cerr << "first query";
         if (!r.isSat()) {
