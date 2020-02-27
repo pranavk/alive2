@@ -278,7 +278,7 @@ static std::vector<ValueCache> generateInputSets(vector<const Input *>& Inputs) 
 
   ValueCache Cache;
   constexpr unsigned PermutedLimit = 15;
-  std::string specialInputs = "abc";
+  std::string specialInputs = "abcdef";
   std::unordered_set<std::string> Visited;
   do {
     int i = 0;
