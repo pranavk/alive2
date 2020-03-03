@@ -308,22 +308,17 @@ static void check_refinement(Errors &errs, Transform &t,
   auto &b = bp.first;
 
   // gather all inputs
-  vector<const Input *> Inputs;
+  vector<const Input *> input_vars;
+  vector<const std::pair<StateValue, std::set<smt::expr>>*> input_vals;
   for (auto &[var, val, used] : src_state.getValues()) {
     (void)used;
     if (auto tmp = dynamic_cast<const Input*>(var)) {
-      Inputs.emplace_back(tmp);
+      input_vars.emplace_back(tmp);
+      input_vals.emplace_back(&val);
     }
   }
 
-  auto InputSets = generateInputSets(Inputs);
-
-//  for (auto &Input : InputSets) {
-//    for (auto &i : Inputs) {
-//      std::cerr << Input[i] << " ";
-//    }
-//    std::cerr << std::endl;
-//  }
+  auto input_sets = generateInputSets(input_vars);
 
   auto &uvars = ap.second;
   auto qvars = src_state.getQuantVars();
@@ -344,14 +339,14 @@ static void check_refinement(Errors &errs, Transform &t,
   AndExpr axioms = src_state.getAxioms();
   axioms.add(tgt_state.getAxioms());
 
-  AndExpr normalTy_axioms = src_state.getAxioms();
+  AndExpr axioms_if_ty_is_normal = src_state.getAxioms();
 
   // restrict type variable from taking disabled values
   if (true || config::disable_undef_input || config::disable_poison_input) {
     for (auto &i : t.src.getInputs()) {
       if (auto in = dynamic_cast<const Input*>(&i)) {
         auto var = in->getTyVar();
-        normalTy_axioms.add(var == 00);
+        axioms_if_ty_is_normal.add(var == 00);
         if (config::disable_undef_input) {
           if (config::disable_poison_input)
             axioms.add(var == 0);
@@ -383,45 +378,26 @@ static void check_refinement(Errors &errs, Transform &t,
   pre_tgt &= src_state.getPre(true)();
   pre_tgt &= tgt_state.getPre(true)();
 
-
-  // MODIFICATION START
-
-
-  auto tgt_state_retval = b;
-  std::vector<const std::pair<StateValue, std::set<smt::expr>>*> input_vars;
-  for (auto &[var, val, used] : tgt_state.getValues()) {
-    (void)used;
-    if (dynamic_cast<const Input*>(var)) {
-      input_vars.emplace_back(&val);
-    }
-  }
-
-
-  auto argperm_bits = ilog2_ceil(input_vars.size(), false);
-  auto bw = input_vars.size() * argperm_bits;
-
-
+  auto argperm_bits = ilog2_ceil(input_vals.size(), false);
+  auto bw = input_vals.size() * argperm_bits;
 
   vector<pair<expr, expr>> repls;
   auto p_var = expr::mkFreshVar("p_var", expr::mkUInt(0, bw));
 
-
   AndExpr permutation_ule;
   std::vector<expr> prev_expr;
-  for (unsigned i = 0; i < input_vars.size(); i++) {
+  for (unsigned i = 0; i < input_vals.size(); i++) {
     auto low = i * argperm_bits;
     auto arg_expr = p_var.extract(low + argperm_bits - 1, low);
 
     DisjointExpr<expr> ret;
-    for (unsigned j = 0; j < input_vars.size(); j++) {
-      ret.add(input_vars[j]->first.value, arg_expr == j);
+    for (unsigned j = 0; j < input_vals.size(); j++) {
+      ret.add(input_vals[j]->first.value, arg_expr == j);
     }
     auto repl_expr = *ret();
-    repls.emplace_back(input_vars[i]->first.value, repl_expr);
+    repls.emplace_back(input_vals[i]->first.value, repl_expr);
 
-
-    permutation_ule.add(arg_expr.ule(input_vars.size() - 1));
-
+    permutation_ule.add(arg_expr.ule(input_vals.size() - 1));
     for (auto &single_expr : prev_expr) {
       permutation_ule.add(arg_expr != single_expr);
     }
@@ -429,52 +405,36 @@ static void check_refinement(Errors &errs, Transform &t,
     prev_expr.emplace_back(arg_expr);
   }
 
-  tgt_state_retval = tgt_state_retval.subst(repls);
-
-  //axioms.add((p_var.extract(0, 0) ^ p_var.extract(1, 1))== 1);
-  //axioms.add(p_var.extract(0, 0) == 0);
+  auto perm_transformed_target = b.subst(repls);
   expr axioms_expr = axioms() && permutation_ule();
 
-  std::cerr << permutation_ule() << std::endl;
-//  std::cerr << a << std::endl;
-//  std::cerr << b << std::endl;
-//  std::cerr << tgt_state_retval << std::endl;
+  // instead of a refines b, we use permutation transformed version of b (perm_transformed_target).
+  auto [poison_cnstr, value_cnstr] = type.refines(src_state, tgt_state, a, perm_transformed_target);
 
-  // Replace `b` with `tgt_State_retval` as last argument
-  auto [poison_cnstr, value_cnstr] = type.refines(src_state, tgt_state, a, tgt_state_retval);
-
-  //std::cerr << value_cnstr <<  std::endl;
-
-  // MODIFICATIONS END
-
-  auto total_cnstr = dom;
-  for (auto &Input : InputSets) {
+  // add input specialization constraints for all the values in src and state
+  // where smt_name matches the one stored in input_vars
+  auto specialization_cnstr = dom;
+  for (auto &input : input_sets) {
     auto tmp_cnstr = value_cnstr;
-    for (auto &i : Inputs) {
+    for (auto &i : input_vars) {
       for (auto &[var, val, used] : src_state.getValues()) {
+        (void)used;
         if (auto vartmp = dynamic_cast<const class Input*>(var)) {
           if (vartmp->smt_name == i->smt_name) {
-         //   std::cerr << "Replacing " << val.first.value << " by " << Input[i]
-            //          << std::endl;
-            tmp_cnstr = tmp_cnstr.subst({{val.first.value, Input[i]}});
-         //   std::cerr << tmp_cnstr << std::endl;
+            tmp_cnstr = tmp_cnstr.subst({{val.first.value, input[i]}});
           }
         }
       }
       for (auto &[var, val, used] : tgt_state.getValues()) {
+        (void)used;
         if (auto vartmp = dynamic_cast<const class Input*>(var)) {
           if (vartmp->smt_name == i->smt_name) {
-         //   std::cerr << "Replacing " << val.first.value << " by " << Input[i]
-            //          << std::endl;
-            tmp_cnstr = tmp_cnstr.subst({{val.first.value, Input[i]}});
-           // std::cerr << tmp_cnstr << std::endl;
+            tmp_cnstr = tmp_cnstr.subst({{val.first.value, input[i]}});
           }
         }
       }
     }
-   // std::cerr << tmp_cnstr << std::endl;
-    total_cnstr &= tmp_cnstr;
-    std::cerr << std::endl << std::endl;
+    specialization_cnstr &= tmp_cnstr;
   }
 
   auto src_mem = src_state.returnMemory();
@@ -520,7 +480,8 @@ static void check_refinement(Errors &errs, Transform &t,
 
   int max_tries = 120;
   int i = 0;
-  auto extra_axioms = normalTy_axioms;
+  // we assume no undef, poison input for first query
+  auto extra_axioms = axioms_if_ty_is_normal;
   while (i++ < max_tries) {
 
     std::cerr << "CEGIS try " << i << std::endl;
@@ -528,7 +489,8 @@ static void check_refinement(Errors &errs, Transform &t,
     uint16_t model_result = 0;
     bool first_query = false;
     Solver::check({
-      {mk_fml(dom && total_cnstr && value_cnstr, extra_axioms(), true),
+      // extra_axioms contains constraints that generalization by substitution inserts
+      {mk_fml(dom && specialization_cnstr && value_cnstr, extra_axioms(), true),
       [&](const Result &r) {
         std::cerr << "first query";
         if (!r.isSat()) {
@@ -590,16 +552,17 @@ static void check_refinement(Errors &errs, Transform &t,
         for (unsigned k = 0; k < input_vars.size(); k++) {
           auto low = k * argperm_bits;
           auto arg_expr = model_result_var.extract(low + argperm_bits - 1, low).simplify();
-          uint64_t  n;
+          uint64_t n;
           arg_expr.isUInt(n);
           std::cerr << n << " ";
         }
         std::cerr << std::endl;
-
         break;
       } else {
+        std::cerr << "Second query fails" << std::endl;
         std::cerr << errs << std::endl;
         errs.clear();
+        // generalization by substitution
         extra_axioms.add(p_var != model_result);
       }
   }
