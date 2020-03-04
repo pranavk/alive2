@@ -386,6 +386,11 @@ static void check_refinement(Errors &errs, Transform &t,
 
   AndExpr permutation_ule;
   std::vector<expr> prev_expr;
+  std::vector<unsigned> arg_pos_idx(input_vars.size());
+  for (unsigned i = 0; i < input_vars.size(); i++) {
+    arg_pos_idx[i] = i;
+  }
+
   for (unsigned i = 0; i < input_vals.size(); i++) {
     auto low = i * argperm_bits;
     auto arg_expr = p_var.extract(low + argperm_bits - 1, low);
@@ -394,7 +399,7 @@ static void check_refinement(Errors &errs, Transform &t,
     DisjointExpr<expr> ret;
     for (unsigned j = 0; j < input_vals.size(); j++) {
       // first argument is value that must be used if second argument holds
-      ret.add(input_vals[j]->first.value, arg_expr == j);
+      ret.add(input_vals[arg_pos_idx[j]]->first.value, arg_expr == j);
     }
     auto repl_expr = *ret();
     repls.emplace_back(input_vals[i]->first.value, repl_expr);
