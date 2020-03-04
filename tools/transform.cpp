@@ -398,16 +398,12 @@ static void check_refinement(Errors &errs, Transform &t,
       auto low = i * argperm_bits;
       auto arg_expr = p_var.extract(low + argperm_bits - 1, low);
 
-      std::cerr << low << " " << argperm_bits << std::endl;
-      std::cerr << p_var << std::endl;
-
       // create a if-then-else chain using DisjointExpr
       DisjointExpr<expr> ret;
       for (unsigned j = 0; j < input_vals.size(); j++) {
         // first argument is value that must be used if second argument holds
         ret.add(input_vals[j]->first.value, arg_expr == j);
-        std::cerr << input_vals[j]->first.value << std::endl <<  arg_expr << std::endl;
-
+      //  std::cerr << input_vals[j]->first.value << std::endl <<  arg_expr << std::endl;
       }
       auto repl_expr = *ret();
       repls.emplace_back(input_vals[i]->first.value, repl_expr);
@@ -508,7 +504,7 @@ static void check_refinement(Errors &errs, Transform &t,
 
     std::cerr << "CEGIS try " << i << std::endl;
     std::cerr << value_cnstr << std::endl;
-    // find p that satisfies first query
+    // find ps that satisfies first query
     unordered_map<std::string, uint64_t> model_result_map;
     bool first_query = false;
     Solver::check({
@@ -524,11 +520,13 @@ static void check_refinement(Errors &errs, Transform &t,
         }
 
         auto &m = r.getModel();
+        std::cerr << "Results\n";
         for (auto &[type_str, p_var] : p_vars) {
-          std::cerr << "Results\np[" << type_str << "]" << " = "
+          std::cerr << "p[" << type_str << "]" << " = "
                     << m.eval(p_var, true) << std::endl;
           model_result_map[type_str] = m.getUInt(p_var);
         }
+        first_query = true;
 
         for (auto &[var, val, used] : src_state.getValues()) {
           (void)used;
@@ -539,7 +537,6 @@ static void check_refinement(Errors &errs, Transform &t,
           print_varval(std::cerr, src_state, m, var, var->getType(), val.first);
           std::cerr << '\n';
         }
-        first_query = true;
       }},
     });
 
@@ -605,9 +602,11 @@ static void check_refinement(Errors &errs, Transform &t,
         std::cerr << errs << std::endl;
         errs.clear();
         // generalization by substitution
+        OrExpr tmp;
         for (auto &[type_str, model_result] : model_result_map) {
-          extra_axioms.add(p_vars[type_str] != model_result);
+          tmp.add(p_vars[type_str] != model_result);
         }
+        extra_axioms.add(tmp());
       }
   }
 }
