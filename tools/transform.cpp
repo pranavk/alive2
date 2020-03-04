@@ -260,42 +260,42 @@ static expr preprocess(Transform &t, const set<expr> &qvars0,
   return insts;
 }
 
-typedef std::unordered_map<const Value*, expr> ValueCache;
-static expr getSpecialAPInt(char C, unsigned Width) {
-  switch (C) {
-    case 'a':
-      return expr::mkInt(-1, Width);
-    case 'b':
-      return expr::mkInt(1, Width);
-    case 'c':
-      return expr::mkUInt(0, Width);
-  }
-  return expr::mkUInt(0, Width);
-}
+//typedef std::unordered_map<const Value*, expr> ValueCache;
+//static expr getSpecialAPInt(char C, unsigned Width) {
+//  switch (C) {
+//    case 'a':
+//      return expr::mkInt(-1, Width);
+//    case 'b':
+//      return expr::mkInt(1, Width);
+//    case 'c':
+//      return expr::mkUInt(0, Width);
+//  }
+//  return expr::mkUInt(0, Width);
+//}
 
-static std::vector<ValueCache> generateInputSets(vector<const Input *>& Inputs) {
-  std::vector<ValueCache> InputSets;
-
-  ValueCache Cache;
-  constexpr unsigned PermutedLimit = 15;
-  std::string specialInputs = "abcdef";
-  std::unordered_set<std::string> Visited;
-  do {
-    int i = 0;
-    std::string usedInput;
-    for (auto &&I : Inputs) {
-      usedInput.append(1, specialInputs[i]);
-      Cache[I] = getSpecialAPInt(specialInputs[i++], I->bits());
-    }
-    if (!Visited.count(usedInput)) {
-      if (InputSets.size() >= PermutedLimit) break;
-      InputSets.push_back(Cache);
-      Visited.insert(usedInput);
-    }
-  } while (std::next_permutation(specialInputs.begin(), specialInputs.end()));
-
-  return InputSets;
-}
+//static std::vector<ValueCache> generateInputSets(vector<const Input *>& Inputs) {
+//  std::vector<ValueCache> InputSets;
+//
+//  ValueCache Cache;
+//  constexpr unsigned PermutedLimit = 15;
+//  std::string specialInputs = "abcdef";
+//  std::unordered_set<std::string> Visited;
+//  do {
+//    int i = 0;
+//    std::string usedInput;
+//    for (auto &&I : Inputs) {
+//      usedInput.append(1, specialInputs[i]);
+//      Cache[I] = getSpecialAPInt(specialInputs[i++], I->bits());
+//    }
+//    if (!Visited.count(usedInput)) {
+//      if (InputSets.size() >= PermutedLimit) break;
+//      InputSets.push_back(Cache);
+//      Visited.insert(usedInput);
+//    }
+//  } while (std::next_permutation(specialInputs.begin(), specialInputs.end()));
+//
+//  return InputSets;
+//}
 
 
 static void check_refinement(Errors &errs, Transform &t,
@@ -308,17 +308,20 @@ static void check_refinement(Errors &errs, Transform &t,
   auto &b = bp.first;
 
   // gather all inputs
-  vector<const Input *> input_vars;
-  vector<const std::pair<StateValue, std::set<smt::expr>>*> input_vals;
+  unordered_map<std::string, vector<const Input *>> input_vars_map;
+  unordered_map<std::string, vector<const std::pair<StateValue, std::set<smt::expr>>*>> input_vals_map;
   for (auto &[var, val, used] : src_state.getValues()) {
     (void)used;
     if (auto tmp = dynamic_cast<const Input*>(var)) {
-      input_vars.emplace_back(tmp);
-      input_vals.emplace_back(&val);
+      string varname = tmp->getType().toString();
+
+      input_vars_map[varname].emplace_back(tmp);
+      input_vals_map[varname].emplace_back(&val);
     }
   }
 
-  auto input_sets = generateInputSets(input_vars);
+  // TODO: Enable specialization
+  //auto input_sets = generateInputSets(input_vars);
 
   auto &uvars = ap.second;
   auto qvars = src_state.getQuantVars();
@@ -378,46 +381,54 @@ static void check_refinement(Errors &errs, Transform &t,
   pre_tgt &= src_state.getPre(true)();
   pre_tgt &= tgt_state.getPre(true)();
 
-  auto argperm_bits = ilog2_ceil(input_vals.size(), false);
-  auto bw = input_vals.size() * argperm_bits;
-
+  unordered_map<std::string, expr> p_vars;
   vector<pair<expr, expr>> repls;
-  auto p_var = expr::mkFreshVar("p_var", expr::mkUInt(0, bw));
-
   AndExpr permutation_ule;
-  std::vector<expr> prev_expr;
-  std::vector<unsigned> arg_pos_idx(input_vars.size());
-  for (unsigned i = 0; i < input_vars.size(); i++) {
-    arg_pos_idx[i] = i;
-  }
 
-  for (unsigned i = 0; i < input_vals.size(); i++) {
-    auto low = i * argperm_bits;
-    auto arg_expr = p_var.extract(low + argperm_bits - 1, low);
+  for (auto &[type_str, input_vars] : input_vars_map) {
+    auto argperm_bits = ilog2_ceil(input_vars.size(), false);
+    auto bw = input_vars.size() * argperm_bits;
 
-    // create a if-then-else chain using DisjointExpr
-    DisjointExpr<expr> ret;
-    for (unsigned j = 0; j < input_vals.size(); j++) {
-      // first argument is value that must be used if second argument holds
-      ret.add(input_vals[arg_pos_idx[j]]->first.value, arg_expr == j);
+    auto p_var = expr::mkFreshVar("p_var", expr::mkUInt(0, bw));
+    p_vars.emplace(type_str, p_var);
+
+    std::vector<expr> prev_expr;
+    auto &input_vals = input_vals_map[type_str];
+    for (unsigned i = 0; i < input_vals.size(); i++) {
+      auto low = i * argperm_bits;
+      auto arg_expr = p_var.extract(low + argperm_bits - 1, low);
+
+      std::cerr << low << " " << argperm_bits << std::endl;
+      std::cerr << p_var << std::endl;
+
+      // create a if-then-else chain using DisjointExpr
+      DisjointExpr<expr> ret;
+      for (unsigned j = 0; j < input_vals.size(); j++) {
+        // first argument is value that must be used if second argument holds
+        ret.add(input_vals[j]->first.value, arg_expr == j);
+        std::cerr << input_vals[j]->first.value << std::endl <<  arg_expr << std::endl;
+
+      }
+      auto repl_expr = *ret();
+      repls.emplace_back(input_vals[i]->first.value, repl_expr);
+
+      // no arg_expr can be greater than number of arguments
+      permutation_ule.add(arg_expr.ule(input_vals.size() - 1));
+
+      // no arg_expr in permutation variable can be equal to any other arg_expr in
+      // that variable
+      for (auto &single_expr : prev_expr) {
+        permutation_ule.add(arg_expr != single_expr);
+      }
+
+      prev_expr.emplace_back(arg_expr);
     }
-    auto repl_expr = *ret();
-    repls.emplace_back(input_vals[i]->first.value, repl_expr);
-
-    // no arg_expr can be greater than number of arguments
-    permutation_ule.add(arg_expr.ule(input_vals.size() - 1));
-
-    // no arg_expr in permutation variable can be equal to any other arg_expr in
-    // that variable
-    for (auto &single_expr : prev_expr) {
-      permutation_ule.add(arg_expr != single_expr);
-    }
-
-    prev_expr.emplace_back(arg_expr);
   }
 
   auto perm_transformed_target = b.subst(repls);
   expr axioms_expr = axioms() && permutation_ule();
+
+  std::cerr << perm_transformed_target << std::endl;
 
   // instead of a refines b, we use permutation transformed version of b (perm_transformed_target).
   auto [poison_cnstr, value_cnstr] = type.refines(src_state, tgt_state, a, perm_transformed_target);
@@ -425,28 +436,28 @@ static void check_refinement(Errors &errs, Transform &t,
   // add input specialization constraints for all the values in src and state
   // where smt_name matches the one stored in input_vars
   auto specialization_cnstr = dom;
-  for (auto &input : input_sets) {
-    auto tmp_cnstr = value_cnstr;
-    for (auto &i : input_vars) {
-      for (auto &[var, val, used] : src_state.getValues()) {
-        (void)used;
-        if (auto vartmp = dynamic_cast<const class Input*>(var)) {
-          if (vartmp->smt_name == i->smt_name) {
-            tmp_cnstr = tmp_cnstr.subst({{val.first.value, input[i]}});
-          }
-        }
-      }
-      for (auto &[var, val, used] : tgt_state.getValues()) {
-        (void)used;
-        if (auto vartmp = dynamic_cast<const class Input*>(var)) {
-          if (vartmp->smt_name == i->smt_name) {
-            tmp_cnstr = tmp_cnstr.subst({{val.first.value, input[i]}});
-          }
-        }
-      }
-    }
-    specialization_cnstr &= tmp_cnstr;
-  }
+//  for (auto &input : input_sets) {
+//    auto tmp_cnstr = value_cnstr;
+//    for (auto &i : input_vars) {
+//      for (auto &[var, val, used] : src_state.getValues()) {
+//        (void)used;
+//        if (auto vartmp = dynamic_cast<const class Input*>(var)) {
+//          if (vartmp->smt_name == i->smt_name) {
+//            tmp_cnstr = tmp_cnstr.subst({{val.first.value, input[i]}});
+//          }
+//        }
+//      }
+//      for (auto &[var, val, used] : tgt_state.getValues()) {
+//        (void)used;
+//        if (auto vartmp = dynamic_cast<const class Input*>(var)) {
+//          if (vartmp->smt_name == i->smt_name) {
+//            tmp_cnstr = tmp_cnstr.subst({{val.first.value, input[i]}});
+//          }
+//        }
+//      }
+//    }
+//    specialization_cnstr &= tmp_cnstr;
+//  }
 
   auto src_mem = src_state.returnMemory();
   auto tgt_mem = tgt_state.returnMemory();
@@ -496,8 +507,9 @@ static void check_refinement(Errors &errs, Transform &t,
   while (i++ < max_tries) {
 
     std::cerr << "CEGIS try " << i << std::endl;
+    std::cerr << value_cnstr << std::endl;
     // find p that satisfies first query
-    uint16_t model_result = 0;
+    unordered_map<std::string, uint64_t> model_result_map;
     bool first_query = false;
     Solver::check({
       // extra_axioms contains constraints that generalization by substitution inserts
@@ -512,10 +524,12 @@ static void check_refinement(Errors &errs, Transform &t,
         }
 
         auto &m = r.getModel();
-        std::cerr << "Results\np = "
-                  << m.eval(p_var, true) << std::endl;
+        for (auto &[type_str, p_var] : p_vars) {
+          std::cerr << "Results\np[" << type_str << "]" << " = "
+                    << m.eval(p_var, true) << std::endl;
+          model_result_map[type_str] = m.getUInt(p_var);
+        }
 
-        model_result = m.getUInt(p_var);
         for (auto &[var, val, used] : src_state.getValues()) {
           (void)used;
           if (!dynamic_cast<const Input*>(var) &&
@@ -534,7 +548,12 @@ static void check_refinement(Errors &errs, Transform &t,
       return;
     }
 
-    std::cerr << "firing second query with p = " << model_result << std::endl;
+    std::cerr << "firing second query with " << std::endl;
+    AndExpr perm_val_expr;
+    for (auto &[type_str, model_result] : model_result_map) {
+      std::cerr << "\tp[" << type_str << "] = " << model_result << std::endl;
+      perm_val_expr.add(p_vars[type_str] == model_result);
+    }
 
     Solver::check({
       { mk_fml(dom_a.notImplies(dom_b)),
@@ -546,7 +565,7 @@ static void check_refinement(Errors &errs, Transform &t,
               [&](const Result &r) {
                 err(r, print_value, "Target is more poisonous than source");
               }},
-      { mk_fml(dom && !value_cnstr, p_var == model_result),
+      { mk_fml(dom && !value_cnstr, perm_val_expr()),
               [&](const Result &r) {
                 err(r, print_value, "Value mismatch");
               }},
@@ -559,13 +578,27 @@ static void check_refinement(Errors &errs, Transform &t,
       if (!errs) {
         std::cerr << "SUCCESS after " << i << " try\n";
 
-        auto model_result_var = expr::mkUInt(model_result, bw);
-        for (unsigned k = 0; k < input_vars.size(); k++) {
-          auto low = k * argperm_bits;
-          auto arg_expr = model_result_var.extract(low + argperm_bits - 1, low).simplify();
-          uint64_t n;
-          arg_expr.isUInt(n);
-          std::cerr << n << " ";
+        for (auto &[var, val, used] : src_state.getValues()) {
+          (void)used;
+          if (auto tmp = dynamic_cast<const Input*>(var)) {
+            string varname = tmp->getType().toString();
+
+            auto &input_vars = input_vars_map[varname];
+            auto &input_vals = input_vals_map[varname];
+            auto argperm_bits = ilog2_ceil(input_vals.size(), false);
+            auto bw = input_vals.size() * argperm_bits;
+            auto model_result_var = expr::mkUInt(model_result_map[varname], bw);
+            for (unsigned k = 0; k < input_vals.size(); k++) {
+              auto low = k * argperm_bits;
+              auto arg_expr = model_result_var.extract(low + argperm_bits - 1, low).simplify();
+              uint64_t n;
+              arg_expr.isUInt(n);
+              if (auto tmp1 = dynamic_cast<const Input*>(input_vars[n])) {
+                std::cerr << tmp1->smt_name << " ";
+              }
+            }
+            std::cerr << std::endl;
+          }
         }
         std::cerr << std::endl;
         break;
@@ -574,7 +607,9 @@ static void check_refinement(Errors &errs, Transform &t,
         std::cerr << errs << std::endl;
         errs.clear();
         // generalization by substitution
-        extra_axioms.add(p_var != model_result);
+        for (auto &[type_str, model_result] : model_result_map) {
+          extra_axioms.add(p_vars[type_str] != model_result);
+        }
       }
   }
 }
