@@ -578,6 +578,7 @@ static void check_refinement(Errors &errs, Transform &t,
       if (!errs) {
         std::cerr << "SUCCESS after " << i << " try\n";
 
+        std::unordered_map<std::string, unsigned> type_counter;
         for (auto &[var, val, used] : src_state.getValues()) {
           (void)used;
           if (auto tmp = dynamic_cast<const Input*>(var)) {
@@ -588,16 +589,13 @@ static void check_refinement(Errors &errs, Transform &t,
             auto argperm_bits = ilog2_ceil(input_vals.size(), false);
             auto bw = input_vals.size() * argperm_bits;
             auto model_result_var = expr::mkUInt(model_result_map[varname], bw);
-            for (unsigned k = 0; k < input_vals.size(); k++) {
-              auto low = k * argperm_bits;
-              auto arg_expr = model_result_var.extract(low + argperm_bits - 1, low).simplify();
-              uint64_t n;
-              arg_expr.isUInt(n);
-              if (auto tmp1 = dynamic_cast<const Input*>(input_vars[n])) {
-                std::cerr << tmp1->smt_name << " ";
-              }
+            auto low = type_counter[varname]++ * argperm_bits;
+            auto arg_expr = model_result_var.extract(low + argperm_bits - 1, low).simplify();
+            uint64_t n;
+            arg_expr.isUInt(n);
+            if (auto tmp1 = dynamic_cast<const Input*>(input_vars[n])) {
+              std::cerr << tmp1->smt_name << " ";
             }
-            std::cerr << std::endl;
           }
         }
         std::cerr << std::endl;
