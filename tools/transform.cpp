@@ -390,14 +390,20 @@ static void check_refinement(Errors &errs, Transform &t,
     auto low = i * argperm_bits;
     auto arg_expr = p_var.extract(low + argperm_bits - 1, low);
 
+    // create a if-then-else chain using DisjointExpr
     DisjointExpr<expr> ret;
     for (unsigned j = 0; j < input_vals.size(); j++) {
+      // first argument is value that must be used if second argument holds
       ret.add(input_vals[j]->first.value, arg_expr == j);
     }
     auto repl_expr = *ret();
     repls.emplace_back(input_vals[i]->first.value, repl_expr);
 
+    // no arg_expr can be greater than number of arguments
     permutation_ule.add(arg_expr.ule(input_vals.size() - 1));
+
+    // no arg_expr in permutation variable can be equal to any other arg_expr in
+    // that variable
     for (auto &single_expr : prev_expr) {
       permutation_ule.add(arg_expr != single_expr);
     }
