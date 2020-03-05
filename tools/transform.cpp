@@ -260,42 +260,42 @@ static expr preprocess(Transform &t, const set<expr> &qvars0,
   return insts;
 }
 
-//typedef std::unordered_map<const Value*, expr> ValueCache;
-//static expr getSpecialAPInt(char C, unsigned Width) {
-//  switch (C) {
-//    case 'a':
-//      return expr::mkInt(-1, Width);
-//    case 'b':
-//      return expr::mkInt(1, Width);
-//    case 'c':
-//      return expr::mkUInt(0, Width);
-//  }
-//  return expr::mkUInt(0, Width);
-//}
+typedef std::unordered_map<const Value*, expr> ValueCache;
+static expr getSpecialAPInt(char C, unsigned Width) {
+  switch (C) {
+    case 'a':
+      return expr::mkInt(-1, Width);
+    case 'b':
+      return expr::mkInt(1, Width);
+    case 'c':
+      return expr::mkUInt(0, Width);
+  }
+  return expr::mkUInt(0, Width);
+}
 
-//static std::vector<ValueCache> generateInputSets(vector<const Input *>& Inputs) {
-//  std::vector<ValueCache> InputSets;
-//
-//  ValueCache Cache;
-//  constexpr unsigned PermutedLimit = 15;
-//  std::string specialInputs = "abcdef";
-//  std::unordered_set<std::string> Visited;
-//  do {
-//    int i = 0;
-//    std::string usedInput;
-//    for (auto &&I : Inputs) {
-//      usedInput.append(1, specialInputs[i]);
-//      Cache[I] = getSpecialAPInt(specialInputs[i++], I->bits());
-//    }
-//    if (!Visited.count(usedInput)) {
-//      if (InputSets.size() >= PermutedLimit) break;
-//      InputSets.push_back(Cache);
-//      Visited.insert(usedInput);
-//    }
-//  } while (std::next_permutation(specialInputs.begin(), specialInputs.end()));
-//
-//  return InputSets;
-//}
+vector<ValueCache> generateInputSets(vector<const Input *>& Inputs) {
+  std::vector<ValueCache> InputSets;
+
+  ValueCache Cache;
+  constexpr unsigned PermutedLimit = 15;
+  std::string specialInputs = "abcdef";
+  std::unordered_set<std::string> Visited;
+  do {
+    int i = 0;
+    std::string usedInput;
+    for (auto &&I : Inputs) {
+      usedInput.append(1, specialInputs[i]);
+      Cache[I] = getSpecialAPInt(specialInputs[i++], I->bits());
+    }
+    if (!Visited.count(usedInput)) {
+      if (InputSets.size() >= PermutedLimit) break;
+      InputSets.push_back(Cache);
+      Visited.insert(usedInput);
+    }
+  } while (std::next_permutation(specialInputs.begin(), specialInputs.end()));
+
+  return InputSets;
+}
 
 
 static void check_refinement(Errors &errs, Transform &t,
@@ -310,6 +310,7 @@ static void check_refinement(Errors &errs, Transform &t,
   // gather all inputs
   unordered_map<std::string, vector<const Input *>> input_vars_map;
   unordered_map<std::string, vector<const std::pair<StateValue, std::set<smt::expr>>*>> input_vals_map;
+  vector<const Input*> input_vars_vec;
   for (auto &[var, val, used] : src_state.getValues()) {
     (void)used;
     if (auto tmp = dynamic_cast<const Input*>(var)) {
@@ -317,11 +318,11 @@ static void check_refinement(Errors &errs, Transform &t,
 
       input_vars_map[varname].emplace_back(tmp);
       input_vals_map[varname].emplace_back(&val);
+      input_vars_vec.emplace_back(tmp);
     }
   }
 
-  // TODO: Enable specialization
-  //auto input_sets = generateInputSets(input_vars);
+  auto input_sets = generateInputSets(input_vars_vec);
 
   auto &uvars = ap.second;
   auto qvars = src_state.getQuantVars();
@@ -423,38 +424,37 @@ static void check_refinement(Errors &errs, Transform &t,
 
   auto perm_transformed_target = b.subst(repls);
   expr axioms_expr = axioms() && permutation_ule();
-
-  std::cerr << perm_transformed_target << std::endl;
-
+  
   // instead of a refines b, we use permutation transformed version of b (perm_transformed_target).
   auto [poison_cnstr, value_cnstr] = type.refines(src_state, tgt_state, a, perm_transformed_target);
 
   // add input specialization constraints for all the values in src and state
   // where smt_name matches the one stored in input_vars
   auto specialization_cnstr = dom;
-//  for (auto &input : input_sets) {
-//    auto tmp_cnstr = value_cnstr;
-//    for (auto &i : input_vars) {
-//      for (auto &[var, val, used] : src_state.getValues()) {
-//        (void)used;
-//        if (auto vartmp = dynamic_cast<const class Input*>(var)) {
-//          if (vartmp->smt_name == i->smt_name) {
-//            tmp_cnstr = tmp_cnstr.subst({{val.first.value, input[i]}});
-//          }
-//        }
-//      }
-//      for (auto &[var, val, used] : tgt_state.getValues()) {
-//        (void)used;
-//        if (auto vartmp = dynamic_cast<const class Input*>(var)) {
-//          if (vartmp->smt_name == i->smt_name) {
-//            tmp_cnstr = tmp_cnstr.subst({{val.first.value, input[i]}});
-//          }
-//        }
-//      }
-//    }
-//    specialization_cnstr &= tmp_cnstr;
-//  }
+  for (auto &input : input_sets) {
+    auto tmp_cnstr = value_cnstr;
+    for (auto &i : input_vars_vec) {
+      for (auto &[var, val, used] : src_state.getValues()) {
+        (void)used;
+        if (auto vartmp = dynamic_cast<const class Input*>(var)) {
+          if (vartmp->smt_name == i->smt_name) {
+            tmp_cnstr = tmp_cnstr.subst({{val.first.value, input[i]}});
+          }
+        }
+      }
+      for (auto &[var, val, used] : tgt_state.getValues()) {
+        (void)used;
+        if (auto vartmp = dynamic_cast<const class Input*>(var)) {
+          if (vartmp->smt_name == i->smt_name) {
+            tmp_cnstr = tmp_cnstr.subst({{val.first.value, input[i]}});
+          }
+        }
+      }
+    }
+    specialization_cnstr &= tmp_cnstr;
+  }
 
+  std::cerr << specialization_cnstr << std::endl;
   auto src_mem = src_state.returnMemory();
   auto tgt_mem = tgt_state.returnMemory();
   auto [memory_cnstr, ptr_refinement0] = src_mem.refined(tgt_mem, false);
