@@ -505,34 +505,58 @@ static void check_refinement(Errors &errs, Transform &t,
     std::cerr << "CEGIS try " << i << std::endl;
     // find ps that satisfies first query
     unordered_map<std::string, uint64_t> model_result_map;
-    bool first_query = false;
-    Solver::check({
-      // extra_axioms contains constraints that generalization by substitution inserts
-      {mk_fml(dom && specialization_cnstr && value_cnstr, extra_axioms(), true),
-      [&](const Result &r) {
-        std::cerr << "first query";
-        if (!r.isSat()) {
+
+    if (i == 1) {
+      // set no permutation for first CEGIS try
+      for (auto &[type_str, p_var] : p_vars) {
+        auto &vec = input_vars_map[type_str];
+        if (vec.size() == 1) {
+          model_result_map[p_var] = 0;
+        } else if (vec.size() == 2) {
+          model_result_map[p_var] = 2;
+        } else if (vec.size() == 3) {
+          model_result_map[p_var] = 36;
+        } else if (vec.size() == 4) {
+          model_result_map[p_var] = 228;
+        } else if (vec.size() == 5) {
+          model_result_map[p_var] = 18056;
+        }
+      }
+    } else {
+
+      bool first_query = false;
+      Solver::check({
+        // extra_axioms contains constraints that generalization by substitution inserts
+        {mk_fml(dom && specialization_cnstr && value_cnstr,
+                extra_axioms(), true),
+         [&](const Result &r) {
+          std::cerr << "first query";
+          if (!r.isSat()) {
           std::cerr << " failed\n";
           return;
-        } else {
+          } else {
           std::cerr << " succeeded\n";
-        }
+          }
 
-        auto &m = r.getModel();
-        std::cerr << "Results\n";
-        for (auto &[type_str, p_var] : p_vars) {
-          std::cerr << "p[" << type_str << "]" << " = "
-                    << m.eval(p_var, true) << std::endl;
-          model_result_map[type_str] = m.getUInt(p_var);
-        }
-        first_query = true;
-      }},
-    });
+          auto &m = r.getModel();
+          std::cerr << "Results\n";
+          for (auto &[type_str, p_var] : p_vars) {
+            std::cerr << "p[" << type_str << "]"
+            << " = "
+            << m.eval(p_var, true)
+            << std::endl;
+            model_result_map[type_str] = m.getUInt(
+                    p_var);
+          }
+          first_query = true;
+        }},
+        });
 
-    if (!first_query) {
-    //  std::cerr<< "no such permutation exist" << std::endl;
-      errs.add("first query fails", false);
-      return;
+      if (!first_query) {
+        //  std::cerr<< "no such permutation exist" << std::endl;
+        errs.add("first query fails", false);
+        return;
+      }
     }
 
     std::cerr << "firing second query with " << std::endl;
@@ -586,7 +610,7 @@ static void check_refinement(Errors &errs, Transform &t,
           }
         }
         std::cerr << std::endl;
-	return;
+	      return;
       } else {
         std::cerr << "Second query fails" << std::endl;
         //std::cerr << errs << std::endl;
