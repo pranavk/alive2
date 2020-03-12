@@ -329,7 +329,7 @@ static void check_refinement(Errors &errs, Transform &t,
   qvars.insert(ap.second.begin(), ap.second.end());
 
   auto err = [&](const Result &r, print_var_val_ty print, const char *msg) {
-    std::cerr << errs << std::endl;
+    //std::cerr << errs << std::endl;
     error(errs, src_state, tgt_state, r, var, msg, check_each_var, print);
   };
 
@@ -454,7 +454,7 @@ static void check_refinement(Errors &errs, Transform &t,
     specialization_cnstr &= tmp_cnstr;
   }
 
-  std::cerr << specialization_cnstr << std::endl;
+  //std::cerr << specialization_cnstr << std::endl;
   auto src_mem = src_state.returnMemory();
   auto tgt_mem = tgt_state.returnMemory();
   auto [memory_cnstr, ptr_refinement0] = src_mem.refined(tgt_mem, false);
@@ -496,14 +496,13 @@ static void check_refinement(Errors &errs, Transform &t,
   };
 
 
-  int max_tries = 120;
+  int max_tries = 7;
   int i = 0;
   // we assume no undef, poison input for first query
   auto extra_axioms = axioms_if_ty_is_normal;
   while (i++ < max_tries) {
 
     std::cerr << "CEGIS try " << i << std::endl;
-    std::cerr << value_cnstr << std::endl;
     // find ps that satisfies first query
     unordered_map<std::string, uint64_t> model_result_map;
     bool first_query = false;
@@ -527,21 +526,12 @@ static void check_refinement(Errors &errs, Transform &t,
           model_result_map[type_str] = m.getUInt(p_var);
         }
         first_query = true;
-
-        for (auto &[var, val, used] : src_state.getValues()) {
-          (void)used;
-          if (!dynamic_cast<const Input*>(var) &&
-              !dynamic_cast<const ConstantInput*>(var))
-            continue;
-          std::cerr << *var << " = ";
-          print_varval(std::cerr, src_state, m, var, var->getType(), val.first);
-          std::cerr << '\n';
-        }
       }},
     });
 
     if (!first_query) {
-      std::cerr<< "no such permutation exist" << std::endl;
+    //  std::cerr<< "no such permutation exist" << std::endl;
+      errs.add("first query fails", false);
       return;
     }
 
@@ -596,10 +586,10 @@ static void check_refinement(Errors &errs, Transform &t,
           }
         }
         std::cerr << std::endl;
-        break;
+	return;
       } else {
         std::cerr << "Second query fails" << std::endl;
-        std::cerr << errs << std::endl;
+        //std::cerr << errs << std::endl;
         errs.clear();
         // generalization by substitution
         OrExpr tmp;
@@ -609,6 +599,8 @@ static void check_refinement(Errors &errs, Transform &t,
         extra_axioms.add(tmp());
       }
   }
+
+  errs.add("cegis max tries", false);
 }
 
 static const ConversionOp* is_bitcast(const Value &v) {
