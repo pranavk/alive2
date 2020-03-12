@@ -511,15 +511,15 @@ static void check_refinement(Errors &errs, Transform &t,
       for (auto &[type_str, p_var] : p_vars) {
         auto &vec = input_vars_map[type_str];
         if (vec.size() == 1) {
-          model_result_map[p_var] = 0;
+          model_result_map[type_str] = 0;
         } else if (vec.size() == 2) {
-          model_result_map[p_var] = 2;
+          model_result_map[type_str] = 2;
         } else if (vec.size() == 3) {
-          model_result_map[p_var] = 36;
+          model_result_map[type_str] = 36;
         } else if (vec.size() == 4) {
-          model_result_map[p_var] = 228;
+          model_result_map[type_str] = 228;
         } else if (vec.size() == 5) {
-          model_result_map[p_var] = 18056;
+          model_result_map[type_str] = 18056;
         }
       }
     } else {
@@ -587,7 +587,7 @@ static void check_refinement(Errors &errs, Transform &t,
       });
 
       if (!errs) {
-        std::cerr << "SUCCESS after " << i << " try\n";
+        std::cerr << "SUCCESS after " << i << " try. Permutation: ";
 
         std::unordered_map<std::string, unsigned> type_counter;
         for (auto &[var, val, used] : src_state.getValues()) {
