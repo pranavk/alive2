@@ -332,7 +332,7 @@ vector<ValueCache> generateInputSets(vector<const Input *>& Inputs) {
     for (auto &&I : Inputs) {
       auto max = expr::mkInt(-1, I->bits());
       uint64_t n;
-      max.isUInt(n);
+      if (!max.isUInt(n)) continue;
       Cache[I] = expr::mkUInt(std::rand() % n, I->bits());
     }
     InputSets.push_back(Cache);
