@@ -16,6 +16,7 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <bitset>
 #include <iostream>
 
 using namespace IR;
@@ -422,12 +423,52 @@ static void check_refinement(Errors &errs, Transform &t,
     }
   }
 
+
   auto perm_transformed_target = b.subst(repls);
+
+  expr p_var_ret;
+  // assuming that struct returned will only have two fields
+  if (t.tgt.getType().isStructType()) {
+    auto tgt_struct_type = t.tgt.getType().getAsStructType();
+    unsigned sz = tgt_struct_type->numElementsConst();
+    auto argperm_bits = ilog2_ceil(sz, false);
+    auto bw = sz * argperm_bits;
+
+    std::vector<expr> prev_expr;
+    vector<StateValue> state_vals;
+    p_var_ret = expr::mkFreshVar("p_var", expr::mkUInt(0, bw));
+    for (unsigned i = 0; i < sz; i++) {
+      auto low = i * argperm_bits;
+      auto arg_expr = p_var_ret.extract(low + argperm_bits - 1, low);
+
+      DisjointExpr<StateValue> ret;
+      for (unsigned j = 0; j < sz; j++) {
+        ret.add(tgt_struct_type->extract(perm_transformed_target, j), arg_expr == j);
+      }
+      state_vals.emplace_back(*ret());
+
+      permutation_ule.add(arg_expr.ule(sz - 1));
+
+      for (auto &single_expr : prev_expr) {
+        permutation_ule.add(arg_expr != single_expr);
+      }
+
+      prev_expr.emplace_back(arg_expr);
+    }
+
+    perm_transformed_target = tgt_struct_type->aggregateVals(state_vals);
+  }
+
+  std::cerr << a.value << std::endl;
+  std::cerr << perm_transformed_target.value << std::endl;
+
   expr axioms_expr = axioms() && permutation_ule();
-  
+  std::cerr << axioms_expr << std::endl;
+
   // instead of a refines b, we use permutation transformed version of b (perm_transformed_target).
   auto [poison_cnstr, value_cnstr] = type.refines(src_state, tgt_state, a, perm_transformed_target);
 
+  std::cerr << value_cnstr << std::endl;
   // add input specialization constraints for all the values in src and state
   // where smt_name matches the one stored in input_vars
   auto specialization_cnstr = dom;
@@ -505,6 +546,7 @@ static void check_refinement(Errors &errs, Transform &t,
     std::cerr << "CEGIS try " << i << std::endl;
     // find ps that satisfies first query
     unordered_map<std::string, uint64_t> model_result_map;
+    uint64_t return_model_result_map;
 
     if (i == 1) {
       // set no permutation for first CEGIS try
@@ -522,6 +564,8 @@ static void check_refinement(Errors &errs, Transform &t,
           model_result_map[type_str] = 18056;
         }
       }
+      // TODO: initialize for width != 2
+      return_model_result_map = 2;
     } else {
 
       bool first_query = false;
@@ -548,6 +592,12 @@ static void check_refinement(Errors &errs, Transform &t,
             model_result_map[type_str] = m.getUInt(
                     p_var);
           }
+          if (t.tgt.getType().isStructType()) {
+            std::cerr << "p_var_ret = "
+                      << m.eval(p_var_ret, true)
+                      << std::endl;
+            return_model_result_map = m.getUInt(p_var_ret);
+          }
           first_query = true;
         }},
         });
@@ -564,6 +614,10 @@ static void check_refinement(Errors &errs, Transform &t,
     for (auto &[type_str, model_result] : model_result_map) {
       std::cerr << "\tp[" << type_str << "] = " << model_result << std::endl;
       perm_val_expr.add(p_vars[type_str] == model_result);
+    }
+    if (t.tgt.getType().isStructType()) {
+      std::cerr << "p_var ret type = " << std::bitset<8>(return_model_result_map) << std::endl;
+      perm_val_expr.add(p_var_ret == return_model_result_map);
     }
 
     Solver::check({
@@ -620,6 +674,7 @@ static void check_refinement(Errors &errs, Transform &t,
         for (auto &[type_str, model_result] : model_result_map) {
           tmp.add(p_vars[type_str] != model_result);
         }
+        tmp.add(p_var_ret != return_model_result_map);
         extra_axioms.add(tmp());
       }
   }

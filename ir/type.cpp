@@ -9,6 +9,7 @@
 #include <array>
 #include <cassert>
 #include <sstream>
+#include <iostream>
 
 using namespace smt;
 using namespace util;
