@@ -391,6 +391,9 @@ static void check_refinement(Errors &errs, Transform &t,
     auto argperm_bits = ilog2_ceil(input_vars.size(), false);
     auto bw = input_vars.size() * argperm_bits;
 
+    if (bw == 0)
+      continue;
+
     auto p_var = expr::mkFreshVar("p_var", expr::mkUInt(0, bw));
     p_vars.emplace(type_str, p_var);
 
@@ -653,6 +656,10 @@ static void check_refinement(Errors &errs, Transform &t,
             auto &input_vals = input_vals_map[varname];
             auto argperm_bits = ilog2_ceil(input_vals.size(), false);
             auto bw = input_vals.size() * argperm_bits;
+
+            if (bw == 0)
+              continue;
+
             auto model_result_var = expr::mkUInt(model_result_map[varname], bw);
             auto low = type_counter[varname]++ * argperm_bits;
             auto arg_expr = model_result_var.extract(low + argperm_bits - 1, low).simplify();
