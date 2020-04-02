@@ -462,16 +462,16 @@ static void check_refinement(Errors &errs, Transform &t,
     perm_transformed_target = tgt_struct_type->aggregateVals(state_vals);
   }
 
-  std::cerr << a.value << std::endl;
-  std::cerr << perm_transformed_target.value << std::endl;
+ // std::cerr << a.value << std::endl;
+  //std::cerr << perm_transformed_target.value << std::endl;
 
   expr axioms_expr = axioms() && permutation_ule();
-  std::cerr << axioms_expr << std::endl;
+  //std::cerr << axioms_expr << std::endl;
 
   // instead of a refines b, we use permutation transformed version of b (perm_transformed_target).
   auto [poison_cnstr, value_cnstr] = type.refines(src_state, tgt_state, a, perm_transformed_target);
 
-  std::cerr << value_cnstr << std::endl;
+  //std::cerr << value_cnstr << std::endl;
   // add input specialization constraints for all the values in src and state
   // where smt_name matches the one stored in input_vars
   auto specialization_cnstr = dom;
