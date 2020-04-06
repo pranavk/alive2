@@ -346,19 +346,17 @@ static void check_refinement(Errors &errs, Transform &t,
   AndExpr axioms_if_ty_is_normal = src_state.getAxioms();
 
   // restrict type variable from taking disabled values
-  if (true || config::disable_undef_input || config::disable_poison_input) {
-    for (auto &i : t.src.getInputs()) {
-      if (auto in = dynamic_cast<const Input*>(&i)) {
-        auto var = in->getTyVar();
-        axioms_if_ty_is_normal.add(var == 00);
-        if (config::disable_undef_input) {
-          if (config::disable_poison_input)
-            axioms.add(var == 0);
-          else
-            axioms.add(var != 1);
-        } else if (config::disable_poison_input)
-          axioms.add(var.extract(1, 1) == 0);
-      }
+  for (auto &i : t.src.getInputs()) {
+    if (auto in = dynamic_cast<const Input*>(&i)) {
+      auto var = in->getTyVar();
+      axioms_if_ty_is_normal.add(var == 00);
+      if (config::disable_undef_input) {
+        if (config::disable_poison_input)
+          axioms.add(var == 0);
+        else
+          axioms.add(var != 1);
+      } else if (config::disable_poison_input)
+        axioms.add(var.extract(1, 1) == 0);
     }
   }
 
@@ -404,7 +402,7 @@ static void check_refinement(Errors &errs, Transform &t,
       auto low = i * argperm_bits;
       auto arg_expr = p_var.extract(low + argperm_bits - 1, low);
 
-      std::cerr << "Replacing \n";
+      //std::cerr << "Replacing \n";
       // create a if-then-else chain using DisjointExpr
       DisjointExpr<expr> ret;
       DisjointExpr<expr> ret_poison;
@@ -412,7 +410,7 @@ static void check_refinement(Errors &errs, Transform &t,
         // first argument is value that must be used if second argument holds
         ret.add(input_vals[j]->first.value, arg_expr == j);
         ret_poison.add(input_vals[j]->first.non_poison, arg_expr == j);
-        std::cerr << input_vals[j]->first << std::endl <<  arg_expr << std::endl;
+       // std::cerr << input_vals[j]->first << std::endl <<  arg_expr << std::endl;
       }
       auto repl_expr = *ret();
       auto repl_poison_expr = *ret_poison();
@@ -437,17 +435,17 @@ static void check_refinement(Errors &errs, Transform &t,
     }
   }
 
-  std::cerr << "a : \n" << a << std::endl;
+ // std::cerr << "a : \n" << a << std::endl;
 
-  std::cerr << "Transforming b : \n" << b << std::endl;
-  std::cerr << "with following replacements:\n";
-  for (auto &[k, v] : repls) {
-    std::cerr << k << " ==> \n" << v << std::endl;
-  }
+ // std::cerr << "Transforming b : \n" << b << std::endl;
+  //std::cerr << "with following replacements:\n";
+//  for (auto &[k, v] : repls) {
+   // std::cerr << k << " ==> \n" << v << std::endl;
+ // }
   // get a new @tgt with conditionals dependent on perm variables
   auto perm_transformed_target = b.subst(repls);
 
-  std::cerr<< "After input perm variables: \n" << perm_transformed_target << std::endl;
+  //std::cerr<< "After input perm variables: \n" << perm_transformed_target << std::endl;
 
   // If return type is permutable, add further conditional dependent on return
   // type permutation variable
@@ -494,15 +492,15 @@ static void check_refinement(Errors &errs, Transform &t,
   expr axioms_expr = axioms() && permutation_ule();
   //std::cerr << axioms_expr << std::endl;
 
-  std::cerr << "non poisons: " << std::endl;
-  std::cerr << a.non_poison << std::endl;
-  std::cerr << b.non_poison << std::endl;
-  std::cerr << perm_transformed_target.non_poison << std::endl;
+//  std::cerr << "non poisons: " << std::endl;
+//  std::cerr << a.non_poison << std::endl;
+//  std::cerr << b.non_poison << std::endl;
+//  std::cerr << perm_transformed_target.non_poison << std::endl;
   // instead of a refines b, we use permutation transformed version of b (perm_transformed_target).
   auto [poison_cnstr, value_cnstr] = type.refines(src_state, tgt_state, a, perm_transformed_target);
 
-  std::cerr << "Value cnstr: \n" << value_cnstr << std::endl;
-  std::cerr << "Poison cnstr: \n" << poison_cnstr << std::endl;
+//  std::cerr << "Value cnstr: \n" << value_cnstr << std::endl;
+//  std::cerr << "Poison cnstr: \n" << poison_cnstr << std::endl;
 
   // add input specialization constraints for all the values in src and state
   // where smt_name matches the one stored in input_vars
@@ -541,10 +539,10 @@ static void check_refinement(Errors &errs, Transform &t,
     return;
   }
 
-  std::cerr << "qvars :\n";
-  for (auto &qvar : qvars) {
-    std::cerr << qvar << std::endl;
-  }
+//  std::cerr << "qvars :\n";
+//  for (auto &qvar : qvars) {
+//    std::cerr << qvar << std::endl;
+//  }
 
   auto mk_fml = [&](expr &&refines, expr extra_axioms = true, bool disable_undef_input = false) -> expr {
     // from the check above we already know that
@@ -553,7 +551,7 @@ static void check_refinement(Errors &errs, Transform &t,
     // (pre_tgt && !pre_src) || (!pre_src && false) ->   [assume refines=false]
     // \forall v . (pre_tgt && !pre_src(v)) ->  [\exists v . pre_src(v)]
     // false
-    std::cerr << "mk_fml\n";
+   // std::cerr << "mk_fml\n";
     if (refines.isFalse())
       return move(refines);
 
@@ -566,18 +564,18 @@ static void check_refinement(Errors &errs, Transform &t,
     }
 
     auto fml = pre_tgt && pre_src.implies(refines);
-    std::cerr << "fml: " << fml << std::endl;
-    std::cerr << "pre_tgt: " << pre_tgt << std::endl;
-    std::cerr <<  "refines " << refines << std::endl;
-    std::cerr <<  "pre_Src -> refines " << pre_src.implies(refines) << std::endl;
+//    std::cerr << "fml: " << fml << std::endl;
+//    std::cerr << "pre_tgt: " << pre_tgt << std::endl;
+//    std::cerr <<  "refines " << refines << std::endl;
+//    std::cerr <<  "pre_Src -> refines " << pre_src.implies(refines) << std::endl;
     auto pre = preprocess(t, qvars_copy, uvars_copy, move(fml));
-    std::cerr << "qvars and pre : \n" ;
-    for (auto &qvar : qvars_copy)
-      std::cerr << qvar << std::endl;
-    std::cerr << pre << std::endl;
-    std::cerr << axioms_expr << std::endl;
-    std::cerr << extra_axioms << std::endl;
-    std::cerr << " == > \n" << (axioms_expr && extra_axioms && pre) << std::endl;
+   // std::cerr << "qvars and pre : \n" ;
+//    for (auto &qvar : qvars_copy)
+//      std::cerr << qvar << std::endl;
+//    std::cerr << pre << std::endl;
+//    std::cerr << axioms_expr << std::endl;
+//    std::cerr << extra_axioms << std::endl;
+//    std::cerr << " == > \n" << (axioms_expr && extra_axioms && pre) << std::endl;
     return axioms_expr && extra_axioms && pre;
   };
 
@@ -672,9 +670,9 @@ static void check_refinement(Errors &errs, Transform &t,
       perm_val_expr.add(p_var_ret == return_model_result_map);
     }
 
-    std::cerr << !poison_cnstr << std::endl;
-    std::cerr << !value_cnstr << std::endl;
-    std::cerr << perm_val_expr() << std::endl;
+//    std::cerr << !poison_cnstr << std::endl;
+//    std::cerr << !value_cnstr << std::endl;
+//    std::cerr << perm_val_expr() << std::endl;
     Solver::check({
       { mk_fml(dom_a.notImplies(dom_b)),
               [&](const Result &r) {
