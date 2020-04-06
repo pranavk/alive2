@@ -454,7 +454,7 @@ static void check_refinement(Errors &errs, Transform &t,
 
   expr p_var_ret;
   // assuming that struct returned will only have two fields
-  if (false && t.tgt.getType().isStructType()) {
+  if (t.tgt.getType().isStructType()) {
     auto tgt_struct_type = t.tgt.getType().getAsStructType();
     unsigned sz = tgt_struct_type->numElementsConst();
     auto argperm_bits = ilog2_ceil(sz, false);
@@ -507,7 +507,7 @@ static void check_refinement(Errors &errs, Transform &t,
   // add input specialization constraints for all the values in src and state
   // where smt_name matches the one stored in input_vars
   auto specialization_cnstr = dom;
-/*  for (auto &input : input_sets) {
+  for (auto &input : input_sets) {
     auto tmp_cnstr = value_cnstr;
     for (auto &i : input_vars_vec) {
       for (auto &[var, val, used] : src_state.getValues()) {
@@ -529,7 +529,7 @@ static void check_refinement(Errors &errs, Transform &t,
     }
     specialization_cnstr &= tmp_cnstr;
   }
-*/
+
   //std::cerr << specialization_cnstr << std::endl;
   auto src_mem = src_state.returnMemory();
   auto tgt_mem = tgt_state.returnMemory();
@@ -644,7 +644,7 @@ static void check_refinement(Errors &errs, Transform &t,
             model_result_map[type_str] = m.getUInt(
                     p_var);
           }
-          if (false && t.tgt.getType().isStructType()) {
+          if (t.tgt.getType().isStructType()) {
             std::cerr << "\tp_var_ret = "
                       << m.eval(p_var_ret, true)
                       << std::endl;
@@ -667,7 +667,7 @@ static void check_refinement(Errors &errs, Transform &t,
       std::cerr << "\tp[" << type_str << "] = " << model_result << std::endl;
       perm_val_expr.add(p_vars[type_str] == model_result);
     }
-    if (false && t.tgt.getType().isStructType()) {
+    if (t.tgt.getType().isStructType()) {
       std::cerr << "\tp_var ret type = " << std::bitset<8>(return_model_result_map) << std::endl;
       perm_val_expr.add(p_var_ret == return_model_result_map);
     }
@@ -722,7 +722,7 @@ static void check_refinement(Errors &errs, Transform &t,
             }
           }
         }
-        if (false && t.tgt.getType().isStructType()) {
+        if (t.tgt.getType().isStructType()) {
           std::cerr << "\tp_var ret type = " << std::bitset<8>(return_model_result_map) << std::endl;
         }
 
@@ -737,7 +737,7 @@ static void check_refinement(Errors &errs, Transform &t,
         for (auto &[type_str, model_result] : model_result_map) {
           tmp.add(p_vars[type_str] != model_result);
         }
-        if (false && t.tgt.getType().isStructType())
+        if (t.tgt.getType().isStructType())
           tmp.add(p_var_ret != return_model_result_map);
         extra_axioms.add(tmp());
       }
