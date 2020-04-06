@@ -312,7 +312,7 @@ static void check_refinement(Errors &errs, Transform &t,
   unordered_map<std::string, vector<const Input *>> input_vars_map;
   unordered_map<std::string, vector<const std::pair<StateValue, std::set<smt::expr>>*>> input_vals_map;
   vector<const Input*> input_vars_vec;
-  for (auto &[var, val, used] : src_state.getValues()) {
+  for (auto &[var, val, used] : tgt_state.getValues()) {
     (void)used;
     if (auto tmp = dynamic_cast<const Input*>(var)) {
       string varname = tmp->getType().toString();
@@ -330,7 +330,6 @@ static void check_refinement(Errors &errs, Transform &t,
   qvars.insert(ap.second.begin(), ap.second.end());
 
   auto err = [&](const Result &r, print_var_val_ty print, const char *msg) {
-    //std::cerr << errs << std::endl;
     error(errs, src_state, tgt_state, r, var, msg, check_each_var, print);
   };
 
@@ -383,10 +382,12 @@ static void check_refinement(Errors &errs, Transform &t,
   pre_tgt &= src_state.getPre(true)();
   pre_tgt &= tgt_state.getPre(true)();
 
+  // introduce permutation variable and construct a replacement vector
+  // -- mapping input variables with conditions based on perm variable
   unordered_map<std::string, expr> p_vars;
   vector<pair<expr, expr>> repls;
+  vector<pair<expr, expr>> repls_poison;
   AndExpr permutation_ule;
-
   for (auto &[type_str, input_vars] : input_vars_map) {
     auto argperm_bits = ilog2_ceil(input_vars.size(), false);
     auto bw = input_vars.size() * argperm_bits;
@@ -403,15 +404,25 @@ static void check_refinement(Errors &errs, Transform &t,
       auto low = i * argperm_bits;
       auto arg_expr = p_var.extract(low + argperm_bits - 1, low);
 
+      std::cerr << "Replacing \n";
       // create a if-then-else chain using DisjointExpr
       DisjointExpr<expr> ret;
+      DisjointExpr<expr> ret_poison;
       for (unsigned j = 0; j < input_vals.size(); j++) {
         // first argument is value that must be used if second argument holds
         ret.add(input_vals[j]->first.value, arg_expr == j);
-      //  std::cerr << input_vals[j]->first.value << std::endl <<  arg_expr << std::endl;
+        ret_poison.add(input_vals[j]->first.non_poison, arg_expr == j);
+        std::cerr << input_vals[j]->first << std::endl <<  arg_expr << std::endl;
       }
       auto repl_expr = *ret();
+      auto repl_poison_expr = *ret_poison();
       repls.emplace_back(input_vals[i]->first.value, repl_expr);
+      repls.emplace_back(input_vals[i]->first.non_poison, repl_poison_expr);
+     // repls_poison.emplace_back(input_vals[i]->first.non_poison, repl_poison_expr);
+
+//      for (unsigned j = 0; j < input_vals.size(); j++) {
+//        ret_poison.add(input_vals[i]);
+//      }
 
       // no arg_expr can be greater than number of arguments
       permutation_ule.add(arg_expr.ule(input_vals.size() - 1));
@@ -426,12 +437,24 @@ static void check_refinement(Errors &errs, Transform &t,
     }
   }
 
+  std::cerr << "a : \n" << a << std::endl;
 
+  std::cerr << "Transforming b : \n" << b << std::endl;
+  std::cerr << "with following replacements:\n";
+  for (auto &[k, v] : repls) {
+    std::cerr << k << " ==> \n" << v << std::endl;
+  }
+  // get a new @tgt with conditionals dependent on perm variables
   auto perm_transformed_target = b.subst(repls);
-  std::cerr<< perm_transformed_target.value << std::endl;
+
+  std::cerr<< "After input perm variables: \n" << perm_transformed_target << std::endl;
+
+  // If return type is permutable, add further conditional dependent on return
+  // type permutation variable
+
   expr p_var_ret;
   // assuming that struct returned will only have two fields
-  if (t.tgt.getType().isStructType()) {
+  if (false && t.tgt.getType().isStructType()) {
     auto tgt_struct_type = t.tgt.getType().getAsStructType();
     unsigned sz = tgt_struct_type->numElementsConst();
     auto argperm_bits = ilog2_ceil(sz, false);
@@ -466,19 +489,25 @@ static void check_refinement(Errors &errs, Transform &t,
   }
 
   //std::cerr << a.value << std::endl;
-  std::cerr << perm_transformed_target.value << std::endl;
+ // std::cerr << "After return perm variables:\n" << perm_transformed_target.value << std::endl;
 
   expr axioms_expr = axioms() && permutation_ule();
   //std::cerr << axioms_expr << std::endl;
 
+  std::cerr << "non poisons: " << std::endl;
+  std::cerr << a.non_poison << std::endl;
+  std::cerr << b.non_poison << std::endl;
+  std::cerr << perm_transformed_target.non_poison << std::endl;
   // instead of a refines b, we use permutation transformed version of b (perm_transformed_target).
   auto [poison_cnstr, value_cnstr] = type.refines(src_state, tgt_state, a, perm_transformed_target);
 
- // std::cerr << value_cnstr << std::endl;
+  std::cerr << "Value cnstr: \n" << value_cnstr << std::endl;
+  std::cerr << "Poison cnstr: \n" << poison_cnstr << std::endl;
+
   // add input specialization constraints for all the values in src and state
   // where smt_name matches the one stored in input_vars
   auto specialization_cnstr = dom;
-  for (auto &input : input_sets) {
+/*  for (auto &input : input_sets) {
     auto tmp_cnstr = value_cnstr;
     for (auto &i : input_vars_vec) {
       for (auto &[var, val, used] : src_state.getValues()) {
@@ -500,7 +529,7 @@ static void check_refinement(Errors &errs, Transform &t,
     }
     specialization_cnstr &= tmp_cnstr;
   }
-
+*/
   //std::cerr << specialization_cnstr << std::endl;
   auto src_mem = src_state.returnMemory();
   auto tgt_mem = tgt_state.returnMemory();
@@ -512,6 +541,11 @@ static void check_refinement(Errors &errs, Transform &t,
     return;
   }
 
+  std::cerr << "qvars :\n";
+  for (auto &qvar : qvars) {
+    std::cerr << qvar << std::endl;
+  }
+
   auto mk_fml = [&](expr &&refines, expr extra_axioms = true, bool disable_undef_input = false) -> expr {
     // from the check above we already know that
     // \exists v,v' . pre_tgt(v') && pre_src(v) is SAT (or timeout)
@@ -519,6 +553,7 @@ static void check_refinement(Errors &errs, Transform &t,
     // (pre_tgt && !pre_src) || (!pre_src && false) ->   [assume refines=false]
     // \forall v . (pre_tgt && !pre_src(v)) ->  [\exists v . pre_src(v)]
     // false
+    std::cerr << "mk_fml\n";
     if (refines.isFalse())
       return move(refines);
 
@@ -531,7 +566,18 @@ static void check_refinement(Errors &errs, Transform &t,
     }
 
     auto fml = pre_tgt && pre_src.implies(refines);
+    std::cerr << "fml: " << fml << std::endl;
+    std::cerr << "pre_tgt: " << pre_tgt << std::endl;
+    std::cerr <<  "refines " << refines << std::endl;
+    std::cerr <<  "pre_Src -> refines " << pre_src.implies(refines) << std::endl;
     auto pre = preprocess(t, qvars_copy, uvars_copy, move(fml));
+    std::cerr << "qvars and pre : \n" ;
+    for (auto &qvar : qvars_copy)
+      std::cerr << qvar << std::endl;
+    std::cerr << pre << std::endl;
+    std::cerr << axioms_expr << std::endl;
+    std::cerr << extra_axioms << std::endl;
+    std::cerr << " == > \n" << (axioms_expr && extra_axioms && pre) << std::endl;
     return axioms_expr && extra_axioms && pre;
   };
 
@@ -598,7 +644,7 @@ static void check_refinement(Errors &errs, Transform &t,
             model_result_map[type_str] = m.getUInt(
                     p_var);
           }
-          if (t.tgt.getType().isStructType()) {
+          if (false && t.tgt.getType().isStructType()) {
             std::cerr << "\tp_var_ret = "
                       << m.eval(p_var_ret, true)
                       << std::endl;
@@ -621,12 +667,13 @@ static void check_refinement(Errors &errs, Transform &t,
       std::cerr << "\tp[" << type_str << "] = " << model_result << std::endl;
       perm_val_expr.add(p_vars[type_str] == model_result);
     }
-    if (t.tgt.getType().isStructType()) {
+    if (false && t.tgt.getType().isStructType()) {
       std::cerr << "\tp_var ret type = " << std::bitset<8>(return_model_result_map) << std::endl;
       perm_val_expr.add(p_var_ret == return_model_result_map);
     }
 
-    std::cerr << value_cnstr << std::endl;
+    std::cerr << !poison_cnstr << std::endl;
+    std::cerr << !value_cnstr << std::endl;
     std::cerr << perm_val_expr() << std::endl;
     Solver::check({
       { mk_fml(dom_a.notImplies(dom_b)),
@@ -634,7 +681,7 @@ static void check_refinement(Errors &errs, Transform &t,
                 err(r, [](ostream&, const Model&){},
                     "Source is more defined than target");
               }},
-      { mk_fml(dom && !poison_cnstr),
+      { mk_fml(dom && !poison_cnstr, perm_val_expr()),
               [&](const Result &r) {
                 err(r, print_value, "Target is more poisonous than source");
               }},
@@ -642,7 +689,7 @@ static void check_refinement(Errors &errs, Transform &t,
               [&](const Result &r) {
                 err(r, print_value, "Value mismatch");
               }},
-      { mk_fml(dom && !memory_cnstr),
+      { mk_fml(dom && !memory_cnstr, perm_val_expr()),
               [&](const Result &r) {
                 err(r, print_ptr_load, "Mismatch in memory");
               }}
@@ -675,7 +722,7 @@ static void check_refinement(Errors &errs, Transform &t,
             }
           }
         }
-        if (t.tgt.getType().isStructType()) {
+        if (false && t.tgt.getType().isStructType()) {
           std::cerr << "\tp_var ret type = " << std::bitset<8>(return_model_result_map) << std::endl;
         }
 
@@ -683,14 +730,15 @@ static void check_refinement(Errors &errs, Transform &t,
 	      return;
       } else {
         std::cerr << "Second query fails" << std::endl;
-        //std::cerr << errs << std::endl;
+        std::cerr << errs << std::endl;
         errs.clear();
         // generalization by substitution
         OrExpr tmp;
         for (auto &[type_str, model_result] : model_result_map) {
           tmp.add(p_vars[type_str] != model_result);
         }
-        tmp.add(p_var_ret != return_model_result_map);
+        if (false && t.tgt.getType().isStructType())
+          tmp.add(p_var_ret != return_model_result_map);
         extra_axioms.add(tmp());
       }
   }
