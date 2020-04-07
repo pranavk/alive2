@@ -678,25 +678,36 @@ static void check_refinement(Errors &errs, Transform &t,
 
         std::cout << "Input" << std::endl;
         std::unordered_map<std::string, unsigned> type_counter;
-        for (auto &[var, val, used] : src_state.getValues()) {
-          (void)used;
-          if (auto tmp = dynamic_cast<const Input*>(var)) {
-            string type_str = tmp->getType().toString();
-
-            auto &input_vals = input_vals_map[type_str];
-            auto argperm_bits = ilog2_ceil(input_vals.size(), false);
-            auto bw = input_vals.size() * argperm_bits;
-
-            if (bw == 0)
-              continue;
-
-            auto model_result_var = expr::mkUInt(model_result_map[type_str], bw);
-            auto low = type_counter[type_str]++ * argperm_bits;
-            auto arg_expr = model_result_var.extract(low + argperm_bits - 1, low).simplify();
-            uint64_t n;
-            arg_expr.isUInt(n);
-            std::cout << n << " ";
+        unordered_map<string, unordered_map<unsigned, unsigned>> result_map;
+        for (unsigned k = 0; k < input_vars_vec.size(); ++k) {
+          auto tmp = input_vars_vec[k];
+          string type_str = tmp->getType().toString();
+          unsigned old_no = type_counter[type_str];
+          unsigned new_no = k;
+          if (k > type_counter[type_str]++) {
+            new_no = k;
           }
+          result_map[type_str][old_no] = new_no;
+        }
+
+        type_counter.clear();
+        for (unsigned k = 0; k < input_vars_vec.size(); ++k) {
+          auto tmp = input_vars_vec[k];
+          string type_str = tmp->getType().toString();
+
+          auto &input_vals = input_vals_map[type_str];
+          auto argperm_bits = ilog2_ceil(input_vals.size(), false);
+          auto bw = input_vals.size() * argperm_bits;
+
+          if (bw == 0)
+            continue;
+
+          auto model_result_var = expr::mkUInt(model_result_map[type_str], bw);
+          auto low = type_counter[type_str]++ * argperm_bits;
+          auto arg_expr = model_result_var.extract(low + argperm_bits - 1, low).simplify();
+          uint64_t n;
+          arg_expr.isUInt(n);
+          std::cout << result_map[type_str][n] << " ";
         }
         std::cout << std::endl;
 
