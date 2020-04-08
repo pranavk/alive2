@@ -567,7 +567,7 @@ static void check_refinement(Errors &errs, Transform &t,
       << "\nTarget value: " << Byte(tgt_mem, m[tgt_mem.load(p)()]);
   };
 
-  int max_tries = 15;
+  int max_tries = 100;
   int i = 0;
   // we assume no undef, poison input for first query
   auto extra_axioms = axioms_if_ty_is_normal;
@@ -674,9 +674,9 @@ static void check_refinement(Errors &errs, Transform &t,
       });
 
       if (!errs) {
-        std::cout << "SUCCESS after " << i << " try. Permutation: \n";
+        std::cerr << "SUCCESS after " << i << " try. Permutation: \n";
 
-        std::cout << "Input: ";
+        std::cerr << "Input: ";
         std::unordered_map<std::string, unsigned> type_counter;
         unordered_map<string, unordered_map<unsigned, unsigned>> result_map;
         for (unsigned k = 0; k < input_vars_vec.size(); ++k) {
@@ -708,12 +708,12 @@ static void check_refinement(Errors &errs, Transform &t,
                                                      low).simplify();
             arg_expr.isUInt(n);
           }
-          std::cout << result_map[type_str][n] << " ";
+          std::cerr << result_map[type_str][n] << " ";
         }
-        std::cout << std::endl;
+        std::cerr << std::endl;
 
         if (t.tgt.getType().isStructType()) {
-          std::cout << "Ret: ";
+          std::cerr << "Ret: ";
           auto tgt_struct_type = t.tgt.getType().getAsStructType();
           unordered_map<string, unsigned> ret_type_counter;
           unordered_map<string, unordered_map<unsigned, unsigned>> ret_result_map;
@@ -744,10 +744,10 @@ static void check_refinement(Errors &errs, Transform &t,
               auto arg_expr = ret_p_var.extract(low + argperm_bits - 1, low);
               arg_expr.isUInt(n);
             }
-            cout << ret_result_map[type_str][n] << " ";
+            cerr << ret_result_map[type_str][n] << " ";
           }
 
-          cout << endl;
+          cerr << endl;
         }
 
         std::cerr << std::endl;
