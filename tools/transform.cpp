@@ -676,7 +676,7 @@ static void check_refinement(Errors &errs, Transform &t,
       if (!errs) {
         std::cout << "SUCCESS after " << i << " try. Permutation: \n";
 
-        std::cout << "Input" << std::endl;
+        std::cout << "Input: ";
         std::unordered_map<std::string, unsigned> type_counter;
         unordered_map<string, unordered_map<unsigned, unsigned>> result_map;
         for (unsigned k = 0; k < input_vars_vec.size(); ++k) {
@@ -712,7 +712,7 @@ static void check_refinement(Errors &errs, Transform &t,
         std::cout << std::endl;
 
         if (t.tgt.getType().isStructType()) {
-          std::cout << "Ret :" << std::endl;
+          std::cout << "Ret: ";
           auto tgt_struct_type = t.tgt.getType().getAsStructType();
           unordered_map<string, unsigned> ret_type_counter;
           unordered_map<string, unordered_map<unsigned, unsigned>> ret_result_map;
