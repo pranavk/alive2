@@ -270,6 +270,12 @@ static expr getSpecialAPInt(char C, unsigned Width) {
       return expr::mkInt(1, Width);
     case 'c':
       return expr::mkUInt(0, Width);
+    case 'd':
+      return expr::IntSMin(Width);
+    case 'e':
+      return expr::IntSMin(Width);
+    case 'f':
+      return expr::IntUMax(Width);
   }
   return expr::mkUInt(0, Width);
 }
@@ -294,6 +300,43 @@ vector<ValueCache> generateInputSets(vector<const Input *>& Inputs) {
       Visited.insert(usedInput);
     }
   } while (std::next_permutation(specialInputs.begin(), specialInputs.end()));
+
+  for (auto &&I : Inputs) {
+    Cache[I] = expr::mkUInt(0, I->bits());
+  }
+  InputSets.push_back(Cache);
+
+  for (auto &&I : Inputs) {
+    Cache[I] = expr::mkUInt(-1, I->bits());
+  }
+  InputSets.push_back(Cache);
+
+  for (auto &&I : Inputs) {
+    Cache[I] = expr::mkUInt(1, I->bits());
+  }
+  InputSets.push_back(Cache);
+
+  for (auto &&I : Inputs) {
+    Cache[I] = expr::IntSMin(I->bits());
+  }
+  InputSets.push_back(Cache);
+
+  for (auto &&I : Inputs) {
+    Cache[I] = expr::IntSMax(I->bits());
+  }
+  InputSets.push_back(Cache);
+
+  constexpr int MaxTries = 5;
+  std::srand(0);
+  for (int m = 0; m < MaxTries; ++m) {
+    for (auto &&I : Inputs) {
+      auto max = expr::mkInt(-1, I->bits());
+      uint64_t n;
+      max.isUInt(n);
+      Cache[I] = expr::mkUInt(std::rand() % n, I->bits());
+    }
+    InputSets.push_back(Cache);
+  }
 
   return InputSets;
 }
