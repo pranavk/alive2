@@ -698,15 +698,16 @@ static void check_refinement(Errors &errs, Transform &t,
           auto &input_vals = input_vals_map[type_str];
           auto argperm_bits = ilog2_ceil(input_vals.size(), false);
           auto bw = input_vals.size() * argperm_bits;
+          uint64_t n = 0;
 
-          if (bw == 0)
-            continue;
-
-          auto model_result_var = expr::mkUInt(model_result_map[type_str], bw);
-          auto low = type_counter[type_str]++ * argperm_bits;
-          auto arg_expr = model_result_var.extract(low + argperm_bits - 1, low).simplify();
-          uint64_t n;
-          arg_expr.isUInt(n);
+          if (bw > 0) {
+            auto model_result_var = expr::mkUInt(model_result_map[type_str],
+                                                 bw);
+            auto low = type_counter[type_str]++ * argperm_bits;
+            auto arg_expr = model_result_var.extract(low + argperm_bits - 1,
+                                                     low).simplify();
+            arg_expr.isUInt(n);
+          }
           std::cout << result_map[type_str][n] << " ";
         }
         std::cout << std::endl;
@@ -733,13 +734,16 @@ static void check_refinement(Errors &errs, Transform &t,
             string type_str = child_ty.toString();
             auto argperm_bits = ilog2_ceil(ret_vals_map[type_str].size(), false);
             auto sz = ret_vals_map[type_str].size();
-            auto bw = sz * argperm_bits;
-            auto low = ret_type_counter[type_str]++ * argperm_bits;
-            auto ret_p_var = expr::mkUInt(return_model_result_map[type_str], bw);
-            auto arg_expr = ret_p_var.extract(low + argperm_bits - 1, low);
+            uint64_t n = 0;
 
-            uint64_t n;
-            arg_expr.isUInt(n);
+            auto bw = sz * argperm_bits;
+            if (bw > 0) {
+              auto low = ret_type_counter[type_str]++ * argperm_bits;
+              auto ret_p_var = expr::mkUInt(return_model_result_map[type_str],
+                                            bw);
+              auto arg_expr = ret_p_var.extract(low + argperm_bits - 1, low);
+              arg_expr.isUInt(n);
+            }
             cout << ret_result_map[type_str][n] << " ";
           }
 
