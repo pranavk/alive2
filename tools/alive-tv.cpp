@@ -282,7 +282,7 @@ static void compareFunctions(llvm::Function &F1, llvm::Function &F2,
     }
     cerr << errs << endl;
   } else {
-    cout << "Transformation seems to be correct!\n\n";
+    cerr << "Transformation seems to be correct!\n\n";
     ++goodCount;
   }
 
@@ -295,11 +295,11 @@ static void compareFunctions(llvm::Function &F1, llvm::Function &F2,
     t2.print(cout, print_opts);
 
     if (Errors errs2 = verifier2.verify()) {
-      cout << "Reverse transformation doesn't verify!\n" << errs2 << endl;
+      cerr << "Reverse transformation doesn't verify!\n" << errs2 << endl;
     } else {
-      cout << "Reverse transformation seems to be correct!\n\n";
+      cerr << "Reverse transformation seems to be correct!\n\n";
       if (!result)
-        cout << "These functions are equivalent.\n\n";
+        cerr << "These functions are equivalent.\n\n";
     }
   }
 }
