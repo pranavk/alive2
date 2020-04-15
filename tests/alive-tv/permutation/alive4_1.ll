@@ -1,5 +1,8 @@
-define i8 @foo(i8, i16, i8, i16) {
-  %5 = sub i8 %0, %2
-  %6 = and i16 %1, %3
-  ret i8 %5
+define i16 @foo(i8 %a, i16 %b, i8 %c, i16 %d) {
+  %x = sub i8 %a, %c
+  %y = sub i16 %b, %d
+
+  %z = sext i8 %x to i16
+  %res = add i16 %y, %z
+  ret i16 %res
 }
