@@ -341,6 +341,21 @@ vector<ValueCache> generateInputSets(vector<const Input *>& Inputs) {
   return InputSets;
 }
 
+static uint64_t get_ordered_permutation(unsigned n_elements) {
+  auto argperm_bits = ilog2_ceil(n_elements, false);
+  auto bw = n_elements * argperm_bits;
+  if (bw > 64)
+    return UINT64_MAX;
+  uint64_t res = 0;
+  for (unsigned k = 0; k < n_elements; ++k) {
+    auto low = k * argperm_bits;
+    // [low, argperm_bits + low - 1]
+    res |= (k << low);
+  }
+
+  return res;
+}
+
 
 static void check_refinement(Errors &errs, Transform &t,
                              State &src_state, State &tgt_state,
@@ -626,31 +641,19 @@ static void check_refinement(Errors &errs, Transform &t,
       // set no permutation for first CEGIS try
       for (auto &[type_str, p_var] : p_vars) {
         auto &vec = input_vars_map[type_str];
-        if (vec.size() == 1) {
-          model_result_map[type_str] = 0;
-        } else if (vec.size() == 2) {
-          model_result_map[type_str] = 2;
-        } else if (vec.size() == 3) {
-          model_result_map[type_str] = 36;
-        } else if (vec.size() == 4) {
-          model_result_map[type_str] = 228;
-        } else if (vec.size() == 5) {
-          model_result_map[type_str] = 18056;
+        model_result_map[type_str] = get_ordered_permutation(vec.size());
+        if (model_result_map[type_str] == UINT64_MAX) {
+          errs.add("Too many input variables!", false);
+          return;
         }
-      }
 
+      }
       for (auto &[type_str, p_var] : ret_p_vars) {
         auto &vec = ret_vals_map[type_str];
-        if (vec.size() == 1) {
-          return_model_result_map[type_str] = 0;
-        } else if (vec.size() == 2) {
-          return_model_result_map[type_str] = 2;
-        } else if (vec.size() == 3) {
-          return_model_result_map[type_str] = 36;
-        } else if (vec.size() == 4) {
-          return_model_result_map[type_str] = 228;
-        } else if (vec.size() == 5) {
-          return_model_result_map[type_str] = 18056;
+        return_model_result_map[type_str] = get_ordered_permutation(vec.size());
+        if (model_result_map[type_str] == UINT64_MAX) {
+          errs.add("Too many return struct elements!", false);
+          return;
         }
       }
     } else {
@@ -775,16 +778,17 @@ static void check_refinement(Errors &errs, Transform &t,
           for (unsigned k = 0; k < tgt_struct_type->numElementsConst(); ++k) {
             auto &child_ty = tgt_struct_type->getChild(k);
             string type_str = child_ty.toString();
-            auto argperm_bits = ilog2_ceil(ret_vals_map[type_str].size(), false);
             auto sz = ret_vals_map[type_str].size();
+            auto argperm_bits = ilog2_ceil(sz, false);
+            auto bw = sz * argperm_bits;
             uint64_t n = 0;
 
-            auto bw = sz * argperm_bits;
             if (bw > 0) {
               auto low = ret_type_counter[type_str]++ * argperm_bits;
               auto ret_p_var = expr::mkUInt(return_model_result_map[type_str],
                                             bw);
-              auto arg_expr = ret_p_var.extract(low + argperm_bits - 1, low);
+              auto arg_expr = ret_p_var.extract(low + argperm_bits - 1, low)
+                      .simplify();
               arg_expr.isUInt(n);
             }
             cerr << ret_result_map[type_str][n] << " ";
