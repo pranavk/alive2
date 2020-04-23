@@ -183,6 +183,18 @@ int64_t Model::getInt(const expr &var) const {
   return n;
 }
 
+void Model::resetPermInterp() const {
+  unsigned max = Z3_model_get_num_consts(ctx(), m);
+  for (unsigned i = 0; i < max; ++i) {
+    auto decl = Z3_model_get_const_decl(ctx(), m, i);
+    auto sym = Z3_get_decl_name(ctx(), decl);
+    std::string name = Z3_get_symbol_string(ctx(), sym);
+    if (name.find("p_var") != std::string::npos) {
+      Z3_add_const_interp(ctx(), m, decl, 0);
+    }
+  }
+}
+
 pair<expr, expr> Model::iterator::operator*(void) const {
   auto decl = Z3_model_get_const_decl(ctx(), m, idx);
   return { expr::mkConst(decl), Z3_model_get_const_interp(ctx(), m, decl) };

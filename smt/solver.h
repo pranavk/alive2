@@ -36,6 +36,7 @@ public:
   expr eval(const expr &var, bool complete = false) const;
   uint64_t getUInt(const expr &var) const;
   int64_t getInt(const expr &var) const;
+  void resetPermInterp() const;
 
   class iterator {
     Z3_model m;
@@ -76,6 +77,10 @@ public:
     return m;
   }
 
+  void resetPermInterp() const {
+    m.resetPermInterp();
+  }
+
 private:
   Model m;
   answer a;
@@ -88,8 +93,7 @@ private:
   friend class Solver;
 };
 
-
-class Solver;
+  class Solver;
 
 class SolverPush {
   Solver &s;

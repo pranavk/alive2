@@ -699,23 +699,46 @@ static void check_refinement(Errors &errs, Transform &t,
       }
     }
 
+    expr gbys(true);
     Solver::check({
       { mk_fml(dom_a.notImplies(dom_b)),
-              [&](const Result &r) {
+              [&, eval_expr = dom_a.notImplies(dom_b)](const Result &r) {
                 err(r, [](ostream&, const Model&){},
                     "Source is more defined than target");
+                return;
+                // TODO: Not sure if following is correct
+                if (!r.isSat())
+                  return;
+                r.resetPermInterp();
+                gbys = gbys && r.getModel().eval(eval_expr);
               }},
       { mk_fml(dom && !poison_cnstr, perm_val_expr()),
-              [&](const Result &r) {
+              [&, eval_expr = dom && !poison_cnstr](const Result &r) {
                 err(r, print_value, "Target is more poisonous than source");
+                return;
+                // TODO: Not sure if following is correct
+                if (!r.isSat())
+                  return;
+                r.resetPermInterp();
+                gbys = gbys && r.getModel().eval(eval_expr);
               }},
       { mk_fml(dom && !value_cnstr, perm_val_expr()),
-              [&](const Result &r) {
+              [&, eval_expr = dom && !value_cnstr](const Result &r) {
                 err(r, print_value, "Value mismatch");
+                if (!r.isSat())
+                  return;
+                r.resetPermInterp();
+                gbys = gbys && r.getModel().eval(eval_expr);
               }},
       { mk_fml(dom && !memory_cnstr, perm_val_expr()),
-              [&](const Result &r) {
+              [&, eval_expr = dom && !memory_cnstr](const Result &r) {
                 err(r, print_ptr_load, "Mismatch in memory");
+                return;
+                // TODO: Not sure if following is correct
+                if (!r.isSat())
+                  return;
+                r.resetPermInterp();
+                gbys = gbys && r.getModel().eval(eval_expr);
               }}
       });
 
@@ -805,7 +828,7 @@ static void check_refinement(Errors &errs, Transform &t,
           std::cerr << errs << std::endl;
         }
         errs.clear();
-        // generalization by substitution
+
         OrExpr tmp;
         for (auto &[type_str, model_result] : model_result_map) {
           tmp.add(p_vars[type_str] != model_result);
@@ -815,6 +838,11 @@ static void check_refinement(Errors &errs, Transform &t,
             tmp.add(ret_p_vars[type_str] != model_result);
           }
         }
+        if (config::debug) {
+          std::cerr << "Generalization by subst: " << std::endl;
+          std::cerr << gbys.simplify() << std::endl;
+        }
+        tmp.add(move(gbys));
         extra_axioms.add(tmp());
       }
   }
